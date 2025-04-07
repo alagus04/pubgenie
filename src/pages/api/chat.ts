@@ -60,7 +60,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const { data: existing } = await supabase.from('articles').select('pmid')
     const existingPmids = new Set((existing || []).map(a => a.pmid))
-    const missingPmids = pmids.filter(pmid => !existingPmids.has(pmid))
+    const missingPmids = pmids.filter((pmid: string) => !existingPmids.has(pmid))
 
     if (missingPmids.length > 0) {
       const fetchParams = new URLSearchParams({
