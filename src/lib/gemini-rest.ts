@@ -27,6 +27,7 @@ export async function generateGeminiContent(prompt: string): Promise<string> {
 
     const result = response.data?.candidates?.[0]?.content?.parts?.[0]?.text
     return result || 'No response generated.'
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
   } catch (err: any) {
     console.error('🛑 Gemini REST Error:', JSON.stringify(err.response?.data || err.message, null, 2))
     return 'An error occurred while generating content.'
