@@ -1,113 +1,159 @@
-import Image from "next/image";
-import { Geist, Geist_Mono } from "next/font/google";
+import { useState } from 'react'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { ScrollArea } from '@/components/ui/scroll-area'
+import ReactMarkdown from 'react-markdown'
+import rehypeSanitize from 'rehype-sanitize'
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
+interface Message {
+  role: 'user' | 'assistant'
+  content: string
+}
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
+interface Article {
+  pmid: string
+  title: string
+  abstract: string
+  authors: string
+  journal: string
+  publication_year: string
+}
 
 export default function Home() {
+  const [messages, setMessages] = useState<Message[]>([])
+  const [input, setInput] = useState('')
+  const [role, setRole] = useState<'student' | 'researcher' | 'clinician'>('student')
+  const [loading, setLoading] = useState(false)
+  const [compareArticles, setCompareArticles] = useState<Article[] | null>(null)
+
+  const isComparePrompt = (text: string) => {
+    const keywords = ['compare', 'difference', 'vs', 'versus']
+    return keywords.some(k => text.toLowerCase().includes(k))
+  }
+
+  const handleSend = async () => {
+    if (!input.trim()) return
+
+    const userMessage: Message = { role: 'user', content: input }
+    setMessages(prev => [...prev, userMessage])
+    setInput('')
+    setLoading(true)
+    setCompareArticles(null)
+
+    const isCompare = isComparePrompt(input)
+
+    const res = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt: input, role, compare: isCompare })
+    })
+    const data = await res.json()
+    console.log('REPLY FROM API:', data.reply)
+
+    if (data.articles && isCompare) {
+      setCompareArticles(data.articles)
+    } else {
+      const assistantMessage: Message = { role: 'assistant', content: data.reply }
+      setMessages(prev => [...prev, assistantMessage])
+    }
+
+    setLoading(false)
+  }
+
   return (
-    <div className="grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20 font-[family-name:var(--font-geist-sans)]">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="list-inside list-decimal text-sm/6 text-center sm:text-left font-[family-name:var(--font-geist-mono)]">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] px-1 py-0.5 rounded font-[family-name:var(--font-geist-mono)] font-semibold">
-              src/pages/index.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <div className="max-w-5xl mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-6">🧠 PubGenie</h1>
+
+      <div className="mb-4 flex gap-2 items-center">
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value as 'student' | 'researcher' | 'clinician')}
+          className="border p-2 rounded-md"
+        >
+          <option value="student">Student</option>
+          <option value="researcher">Researcher</option>
+          <option value="clinician">Clinician</option>
+        </select>
+        <span className="text-muted-foreground text-sm">Tailors responses by role</span>
+      </div>
+
+      {compareArticles ? (
+        <div className="overflow-x-auto border rounded-lg p-4 mb-4">
+          <table className="table-auto w-full text-sm">
+            <thead>
+              <tr>
+                <th className="text-left p-2 border">Field</th>
+                {compareArticles.map(article => (
+                  <th key={article.pmid} className="text-left p-2 border">
+                    <a
+                      href={`https://pubmed.ncbi.nlm.nih.gov/${article.pmid}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 underline"
+                    >
+                      PMID: {article.pmid}
+                    </a>
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="font-medium p-2 border">Title</td>
+                {compareArticles.map(a => <td key={a.pmid} className="p-2 border">{a.title}</td>)}
+              </tr>
+              <tr>
+                <td className="font-medium p-2 border">Authors</td>
+                {compareArticles.map(a => <td key={a.pmid} className="p-2 border">{a.authors}</td>)}
+              </tr>
+              <tr>
+                <td className="font-medium p-2 border">Year</td>
+                {compareArticles.map(a => <td key={a.pmid} className="p-2 border">{a.publication_year}</td>)}
+              </tr>
+              <tr>
+                <td className="font-medium p-2 border">Abstract</td>
+                {compareArticles.map(a => <td key={a.pmid} className="p-2 border whitespace-pre-wrap">{a.abstract}</td>)}
+              </tr>
+            </tbody>
+          </table>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=default-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+      ) : (
+        <ScrollArea className="h-[400px] border rounded-md p-4 mb-4">
+          {messages.map((msg, idx) => (
+            <div key={idx} className={`mb-3 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+              <div
+                className={`prose max-w-[80%] inline-block px-4 py-2 rounded-lg whitespace-pre-wrap ${
+                  msg.role === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-100 text-gray-900'
+                }`}
+              >
+                <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
+                  {msg.content.replace(
+                    /PMID[:\s]*([0-9]+)/g,
+                    (_, id) => `[PMID: ${id}](https://pubmed.ncbi.nlm.nih.gov/${id})`
+                  )}
+                </ReactMarkdown>
+              </div>
+            </div>
+          ))}
+          {loading && (
+            <div className="text-left mb-3">
+              <div className="inline-block px-4 py-2 rounded-lg bg-gray-100 text-gray-600 animate-pulse">
+                Thinking...
+              </div>
+            </div>
+          )}
+        </ScrollArea>
+      )}
+
+      <div className="flex gap-2">
+        <Input
+          placeholder="Ask PubGenie about any medical or research topic..."
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+        />
+        <Button onClick={handleSend} disabled={loading}>Send</Button>
+      </div>
     </div>
-  );
+  )
 }
