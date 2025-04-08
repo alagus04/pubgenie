@@ -67,7 +67,7 @@ export default function SignUpPage() {
           <Input placeholder="Company/Institution" value={institution} onChange={(e) => setInstitution(e.target.value)} required />
           {error && <p className="text-red-500 text-sm">{error}</p>}
           <Button type="submit" className="w-full" disabled={loading}>
-            {loading ? 'Signing up...' : 'Sign Up'}
+            {loading ? 'Signing up..' : 'Sign Up'}
           </Button>
         </form>
       </div>
