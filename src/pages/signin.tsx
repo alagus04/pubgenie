@@ -20,8 +20,12 @@ export default function SignInPage() {
     try {
       await signInWithEmailAndPassword(auth, email, password)
       router.push('/')
-    } catch (err: any) {
-      setError(err.message || 'Failed to sign in')
+    } catch (err) {
+      if (err instanceof Error) {
+        setError(err.message)
+      } else {
+        setError('Failed to sign in')
+      }
       setLoading(false)
     }
   }
@@ -51,7 +55,7 @@ export default function SignInPage() {
           </Button>
         </form>
 
-        <p className="text-sm text-center text-gray-500">
+        <p className="text-sm text-center text-muted-foreground">
           Don’t have an account?{' '}
           <Link href="/signup" className="text-blue-600 hover:underline">
             Sign up here
