@@ -1,4 +1,3 @@
-// /pages/api/chat.ts
 import type { NextApiRequest, NextApiResponse } from 'next'
 import { supabase } from '@/lib/supabase'
 import { generateGeminiContent } from '@/lib/gemini-rest'
@@ -9,36 +8,6 @@ import { extractSmartSearchTerms } from '@/lib/searchUtils'
 const EUTILS_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi'
 const EUTILS_FETCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi'
 const PUBMED_API_KEY = process.env.PUBMED_API_KEY
-
-async function generateSemanticQuery(userPrompt: string): Promise<string> {
-  const prompt = `
-You are an expert biomedical librarian helping researchers search PubMed. Extract the most effective search query from this prompt:
-
-"${userPrompt}"
-
-Your query should:
-
-- Use clear biomedical keywords and boolean operators (AND, OR)
-- Avoid vague terms unless medically relevant
-- Include condition, treatment, or population when applicable
-
-Output ONLY the query.
-  `
-
-  try {
-    const response = await generateGeminiContent([
-      {
-        role: 'user',
-        parts: [{ text: prompt }]
-      }
-    ])
-    const cleaned = response?.trim().replace(/(^["']+|["']+$)/g, '')
-    return cleaned || userPrompt
-  } catch (err) {
-    console.error('🔍 Semantic query generation failed:', err)
-    return userPrompt
-  }
-}
 
 async function tryQuery(query: string) {
   const searchParams = new URLSearchParams({
@@ -57,7 +26,42 @@ async function tryQuery(query: string) {
 function logQueryDebug(prompt: string, query: string, pmids: string[]) {
   console.log('🔎 Original Prompt:', prompt)
   console.log('📚 Gemini Search Query:', query)
-  console.log('🧬 PubMed PMIDs:', pmids)
+  console.log('🧨 PubMed PMIDs:', pmids)
+}
+
+async function isTopicShift(history: { role: string; content: string }[], newPrompt: string): Promise<boolean> {
+  const prompt = `
+You are an assistant helping to determine whether a user is changing the topic of discussion.
+
+Here is the conversation history:
+${history.map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`).join('\n')}
+
+The user's new message is:
+"${newPrompt}"
+
+Based on the above, is the new message about a **different biomedical topic** than the earlier messages?
+
+Respond with ONLY "yes" or "no".`
+
+  const response = await generateGeminiContent([
+    {
+      role: 'user',
+      parts: [{ text: prompt }]
+    }
+  ])
+
+  return response.trim().toLowerCase() === 'yes'
+}
+
+function extractTopicTagFromHistory(history: { role: string; content: string }[]): string | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const msg = history[i]
+    if (msg.role === 'assistant' && msg.content.includes('🧠 Topic:')) {
+      const match = msg.content.match(/🧠 Topic: (.+)/)
+      return match?.[1]?.trim() || null
+    }
+  }
+  return null
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
@@ -66,10 +70,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   try {
     const isFollowUp = history.length > 0
+    const topicShift = isFollowUp ? await isTopicShift(history, prompt) : false
     let articles = []
+    let topicTag = ''
+    const allPmids = new Set<string>()
 
-    if (!isFollowUp) {
-      const semanticQuery = await extractSmartSearchTerms(prompt, isFollowUp)
+    if (!isFollowUp || topicShift) {
+      topicTag = await extractSmartSearchTerms(prompt, false)
+      const semanticQuery = topicTag
       let pmids = await tryQuery(semanticQuery)
       logQueryDebug(prompt, semanticQuery, pmids)
 
@@ -85,6 +93,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
 
       if (!pmids.length) return res.status(200).json({ reply: "I couldn't find any articles related to your query." })
+
+      pmids.forEach((pmid) => allPmids.add(pmid))
 
       const { data: existing } = await supabase.from('articles').select('pmid')
       const existingPmids = new Set((existing || []).map(a => a.pmid))
@@ -135,64 +145,53 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           })
         }
       }
-
-      const { data: fetchedArticles } = await supabase
-        .from('articles')
-        .select('*')
-        .in('pmid', pmids)
-
-      if (!fetchedArticles || fetchedArticles.length === 0) {
-        return res.status(200).json({ reply: 'No articles found for summarization.' })
+    } else {
+      const topicTag = await extractSmartSearchTerms(prompt, true)
+      for (const msg of history) {
+        if (msg.role === 'assistant' && msg.content.includes(`🧠 Topic: ${topicTag}`)) {
+          const lines = msg.content.split('\n')
+          const pmids = lines.map(line => line.match(/PMID: (\d+)/)?.[1]).filter(Boolean) as string[]
+          pmids.forEach((pmid) => allPmids.add(pmid))
+        }
       }
-
-      articles = fetchedArticles
     }
 
-    const combinedAbstracts = articles
-      .map(a => `Title: ${a.title}
-Authors: ${a.authors}
-Journal: ${a.journal} (${a.publication_year})
-Abstract: ${a.abstract}
-PMID: ${a.pmid}`)
+    if (!allPmids.size) {
+      return res.status(200).json({ reply: "I couldn't find any articles to summarize." })
+    }
+
+    const { data: fetchedArticles } = await supabase
+      .from('articles')
+      .select('*')
+      .in('pmid', Array.from(allPmids))
+
+    if (!fetchedArticles || fetchedArticles.length === 0) {
+      return res.status(200).json({ reply: 'No articles found for summarization.' })
+    }
+
+    const combinedAbstracts = fetchedArticles
+      .map(a => `Title: ${a.title}\nAuthors: ${a.authors}\nJournal: ${a.journal} (${a.publication_year})\nAbstract: ${a.abstract}\nPMID: ${a.pmid}`)
       .join('\n\n')
 
-    const messageHistory = history.map((m: any) => ({
-      role: m.role,
-      parts: [{ text: m.content }]
-    }))
+    const pmidList = fetchedArticles.map(a => a.pmid).join(', ')
 
     const reply = await generateGeminiContent([
-      ...messageHistory,
       {
         role: 'user',
         parts: [{
-          text: isFollowUp
-            ? `You're a biomedical research assistant. This is a follow-up question.
-
-Use your memory of the prior articles to answer this question if relevant. If this is a new topic, say that you need new articles to answer it.
-
-Follow-up Question: "${prompt}"`
+          text: isFollowUp && !topicShift
+            ? `You're a biomedical research assistant. This is a follow-up question. 🧠 Topic: ${topicTag}\n\nHere are the PMIDs of the articles we're referring to: ${pmidList}.\n\nUse your memory of the prior articles to answer this question if relevant. If this is a new topic, say that you need new articles to answer it.\n\nFollow-up Question: "${prompt}"`
             : compare
-            ? `You are a biomedical research assistant. Compare the following articles based on their key findings, methodologies, outcomes, and relevance. DO NOT use a table. Instead, present your findings in a clearly structured list using markdown headings and bullet points. Tailor the tone for a ${role}.
-
-User Prompt: "${prompt}"
-
-Articles:
-${combinedAbstracts}`
-            : `You are a biomedical research assistant. Answer the following question using only the provided article content. Highlight key findings and include PMIDs. Tailor the tone for a ${role}.
-
-User Question: "${prompt}"
-
-Articles:
-${combinedAbstracts}`
+              ? `You are a biomedical research assistant. 🧠 Topic: ${topicTag}\n\nCompare the following articles based on their key findings, methodologies, outcomes, and relevance. DO NOT use a table. Instead, present your findings in a clearly structured list using markdown headings and bullet points. Tailor the tone for a ${role}.\n\nUser Prompt: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
+              : `You are a biomedical research assistant. 🧠 Topic: ${topicTag}\n\nAnswer the following question using only the provided article content. Highlight key findings and include PMIDs. Tailor the tone for a ${role}.\n\nUser Question: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
         }]
       }
     ])
 
     return res.status(200).json({ reply })
-} catch (err) {
+  } catch (err) {
     const error = err as unknown as { response?: { data?: unknown }, message?: string }
     console.error('Gemini Chat Error:', JSON.stringify(error.response?.data || error.message, null, 2))
     return res.status(500).json({ error: 'Something went wrong while generating the summary.' })
-  }  
+  }
 }
