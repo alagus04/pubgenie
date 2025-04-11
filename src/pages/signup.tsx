@@ -1,16 +1,10 @@
-// /pages/signup.tsx
 import { useState } from 'react'
 import { useRouter } from 'next/router'
 import { auth } from '@/lib/firebase'
-import {
-  createUserWithEmailAndPassword,
-  GoogleAuthProvider,
-  signInWithPopup
-} from 'firebase/auth'
+import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
 import { getFirestore, doc, setDoc } from 'firebase/firestore'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import Link from 'next/link'
 import { FcGoogle } from 'react-icons/fc'
 
 export default function SignUpPage() {
@@ -28,11 +22,11 @@ export default function SignUpPage() {
 
   const handleSignUp = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setError('')
+    setLoading(true)
 
     if (!userType) {
-      setError('Please select a user type.')
+      setError('Please select your user type.')
       setLoading(false)
       return
     }
@@ -51,12 +45,8 @@ export default function SignUpPage() {
       })
 
       router.push('/app')
-    } catch (err) {
-      if (err instanceof Error) {
-        setError(err.message)
-      } else {
-        setError('Sign up failed')
-      }
+    } catch (error) {
+      setError('Sign up failed. Please try again.')
       setLoading(false)
     }
   }
@@ -77,7 +67,7 @@ export default function SignUpPage() {
       })
 
       router.push('/app')
-    } catch (err) {
+    } catch (error) {
       setError('Google sign-up failed.')
     }
   }
@@ -85,8 +75,8 @@ export default function SignUpPage() {
   return (
     <div className="flex flex-col items-center justify-center min-h-screen px-4">
       <div className="max-w-md w-full border border-gray-200 p-6 rounded-2xl shadow-xl space-y-6">
-        <h1 className="text-xl font-semibold text-center">Create your PubGenie account</h1>
-        <p className="text-center text-gray-500">Sign up to start exploring research intelligently.</p>
+        <h1 className="text-xl font-semibold text-center">Create a PubGenie Account</h1>
+        <p className="text-center text-gray-500">Join and start exploring smarter research</p>
 
         <button
           onClick={handleGoogleSignUp}
@@ -106,37 +96,28 @@ export default function SignUpPage() {
           <Input placeholder="Last Name" value={lastName} onChange={(e) => setLastName(e.target.value)} required />
           <Input type="email" placeholder="Email" value={email} onChange={(e) => setEmail(e.target.value)} required />
           <Input type="password" placeholder="Password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+
           <select
             value={userType}
             onChange={(e) => setUserType(e.target.value)}
-            className="border p-2 rounded-md w-full text-sm text-gray-700"
+            className="border p-2 rounded-md w-full"
             required
           >
-            <option value="" disabled>Select one</option>
+            <option value="">Select one</option>
             <option>Student</option>
             <option>Professor</option>
             <option>Researcher</option>
             <option>Industry Professional</option>
             <option>Healthcare Worker (Doctor, Nurse, etc.)</option>
           </select>
-          <Input
-            placeholder="Company / Institution"
-            value={institution}
-            onChange={(e) => setInstitution(e.target.value)}
-            required
-          />
+
+          <Input placeholder="Company/Institution" value={institution} onChange={(e) => setInstitution(e.target.value)} required />
           {error && <p className="text-red-500 text-sm">{error}</p>}
+
           <Button type="submit" className="w-full" disabled={loading}>
             {loading ? 'Signing up...' : 'Sign Up'}
           </Button>
         </form>
-
-        <p className="text-sm text-center text-muted-foreground">
-          Already have an account?{' '}
-          <Link href="/signin" className="text-blue-600 hover:underline">
-            Sign in
-          </Link>
-        </p>
       </div>
     </div>
   )

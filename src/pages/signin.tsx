@@ -1,4 +1,3 @@
-// /pages/signin.tsx
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/router'
 import { auth } from '@/lib/firebase'
@@ -20,15 +19,14 @@ export default function SignInPage() {
   const [loading, setLoading] = useState(false)
   const router = useRouter()
 
-  // ✅ Step 3: Redirect signed-in users away from sign-in page
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (user) => {
       if (user) {
-        router.push('/app') // ✅ change this to your actual app route
+        router.push('/app')
       }
     })
     return () => unsubscribe()
-  }, [])
+  }, [router]) // ✅ Added router as a dependency
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -36,8 +34,8 @@ export default function SignInPage() {
     setError('')
     try {
       await signInWithEmailAndPassword(auth, email, password)
-      router.push('/app') // ✅ Step 2: redirect after successful sign-in
-    } catch (err) {
+      router.push('/app')
+    } catch (error) {
       setError('Invalid email or password.')
       setLoading(false)
     }
@@ -47,8 +45,8 @@ export default function SignInPage() {
     const provider = new GoogleAuthProvider()
     try {
       await signInWithPopup(auth, provider)
-      router.push('/app') // ✅ Step 2 for Google sign-in
-    } catch (err) {
+      router.push('/app')
+    } catch (error) {
       setError('Google sign-in failed.')
     }
   }

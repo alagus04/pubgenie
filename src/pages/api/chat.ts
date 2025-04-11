@@ -190,8 +190,9 @@ ${combinedAbstracts}`
     ])
 
     return res.status(200).json({ reply })
-  } catch (err) {
-    console.error('Gemini Chat Error:', err)
+} catch (err) {
+    const error = err as unknown as { response?: { data?: unknown }, message?: string }
+    console.error('Gemini Chat Error:', JSON.stringify(error.response?.data || error.message, null, 2))
     return res.status(500).json({ error: 'Something went wrong while generating the summary.' })
-  }
+  }  
 }
