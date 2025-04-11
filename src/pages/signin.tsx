@@ -35,7 +35,7 @@ export default function SignInPage() {
     try {
       await signInWithEmailAndPassword(auth, email, password)
       router.push('/app')
-    } catch (_error) {
+    } catch {
       setError('Invalid email or password.')
       setLoading(false)
     }
@@ -46,7 +46,7 @@ export default function SignInPage() {
     try {
       await signInWithPopup(auth, provider)
       router.push('/app')
-    } catch (_error) {
+    } catch {
       setError('Google sign-in failed.')
     }
   }

@@ -94,7 +94,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       if (!pmids.length) return res.status(200).json({ reply: "I couldn't find any articles related to your query." })
 
-      pmids.forEach((pmid) => allPmids.add(pmid))
+      pmids.forEach((pmid: string) => allPmids.add(pmid))
 
       const { data: existing } = await supabase.from('articles').select('pmid')
       const existingPmids = new Set((existing || []).map(a => a.pmid))
@@ -150,7 +150,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       for (const msg of history) {
         if (msg.role === 'assistant' && msg.content.includes(`🧠 Topic: ${topicTag}`)) {
           const lines = msg.content.split('\n')
-          const pmids = lines.map(line => line.match(/PMID: (\d+)/)?.[1]).filter(Boolean) as string[]
+          const pmids = lines.map((line: string) => line.match(/PMID: (\d+)/)?.[1]).filter(Boolean) as string[]
           pmids.forEach((pmid) => allPmids.add(pmid))
         }
       }
