@@ -72,7 +72,7 @@ export default function LandingPage() {
           transition={{ delay: 0.4 }}
         >
           From literature reviews to clinical insights, PubGenie helps you search
-          smarter, compare faster, and summarize research in seconds.
+          smarter, compare faster, and summarize research in just seconds.
         </motion.p>
 
         <motion.div
