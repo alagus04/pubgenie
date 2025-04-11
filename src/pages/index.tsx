@@ -1,168 +1,112 @@
-import { useState } from 'react'
-import { Input } from '@/components/ui/input'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { ScrollArea } from '@/components/ui/scroll-area'
-import ReactMarkdown from 'react-markdown'
-import rehypeSanitize from 'rehype-sanitize'
-import ProtectedRoute from '@/components/ProtectedRoute'
-import { signOut } from 'firebase/auth'
-import { auth } from '@/lib/firebase'
+import { Github } from 'lucide-react'
+import { motion } from 'framer-motion'
 
-interface Message {
-  role: 'user' | 'assistant'
-  content: string
-}
-
-interface Article {
-  pmid: string
-  title: string
-  abstract: string
-  authors: string
-  journal: string
-  publication_year: string
-}
-
-export default function Home() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [input, setInput] = useState('')
-  const [role, setRole] = useState<'student' | 'researcher' | 'clinician'>('student')
-  const [loading, setLoading] = useState(false)
-  const [compareArticles, setCompareArticles] = useState<Article[] | null>(null)
-
-  const isComparePrompt = (text: string) => {
-    const keywords = ['compare', 'difference', 'vs', 'versus']
-    return keywords.some(k => text.toLowerCase().includes(k))
-  }
-
-  const handleSend = async () => {
-    if (!input.trim()) return
-
-    const userMessage: Message = { role: 'user', content: input }
-    setMessages(prev => [...prev, userMessage])
-    setInput('')
-    setLoading(true)
-    setCompareArticles(null)
-
-    const isCompare = isComparePrompt(input)
-
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: input, role, compare: isCompare })
-    })
-    const data = await res.json()
-    console.log('REPLY FROM API:', data.reply)
-
-    if (data.articles && isCompare) {
-      setCompareArticles(data.articles)
-    } else {
-      const assistantMessage: Message = { role: 'assistant', content: data.reply }
-      setMessages(prev => [...prev, assistantMessage])
-    }
-
-    setLoading(false)
-  }
-
+export default function LandingPage() {
   return (
-    <ProtectedRoute>
-      <div className="max-w-5xl mx-auto px-4 py-8">
-        <div className="w-full flex justify-end items-center mb-4">
-          <Button variant="outline" onClick={() => signOut(auth)}>Sign Out</Button>
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ duration: 0.8 }}
+      className="min-h-screen bg-white text-center flex flex-col"
+    >
+      {/* Top navbar */}
+      <header className="w-full px-6 py-4 flex items-center justify-between">
+        <div className="text-lg font-semibold text-gray-900" />
+        <div className="flex items-center gap-4">
+          <Link href="/signin">
+            <Button variant="ghost" size="sm">Sign In</Button>
+          </Link>
+          <Link href="/signup">
+            <Button size="sm">Sign Up</Button>
+          </Link>
         </div>
+      </header>
 
-        <h1 className="text-3xl font-bold mb-6">🧠 PubGenie</h1>
-
-        <div className="mb-4 flex gap-2 items-center">
-          <select
-            value={role}
-            onChange={(e) => setRole(e.target.value as 'student' | 'researcher' | 'clinician')}
-            className="border p-2 rounded-md"
+      {/* Main content */}
+      <main className="flex flex-col items-center justify-center flex-grow px-6 py-20 space-y-6">
+        <motion.div
+          initial={{ opacity: 0, x: -40 }}
+          animate={{ opacity: 1, x: 0 }}
+          transition={{ delay: 0.2, type: 'spring', stiffness: 100 }}
+        >
+          <motion.a
+            href="https://x.com/alagus22"
+            target="_blank"
+            rel="noopener noreferrer"
+            whileHover={{ x: 8 }}
+            className="flex items-center gap-2 bg-[#0F172A] text-white px-4 py-2 rounded-full text-sm font-medium hover:opacity-90 transition"
           >
-            <option value="student">Student</option>
-            <option value="researcher">Researcher</option>
-            <option value="clinician">Clinician</option>
-          </select>
-          <span className="text-muted-foreground text-sm">Tailors responses by role</span>
-        </div>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              width="16"
+              height="16"
+              viewBox="0 0 512 512"
+              fill="currentColor"
+              className="w-4 h-4"
+            >
+              <path d="M 461.460938 0 L 308.199219 193.613281 L 497.300781 512 L 347.300781 512 L 234.679688 330.574219 L 101.089844 512 L 0 512 L 165.179688 307.542969 L 24.359375 0 L 174.199219 0 L 273.5 177.210938 L 397.5 0 Z" />
+            </svg>
+            Follow @alagus22 on X
+          </motion.a>
+        </motion.div>
 
-        {compareArticles ? (
-          <div className="overflow-x-auto border rounded-lg p-4 mb-4">
-            <table className="table-auto w-full text-sm">
-              <thead>
-                <tr>
-                  <th className="text-left p-2 border">Field</th>
-                  {compareArticles.map(article => (
-                    <th key={article.pmid} className="text-left p-2 border">
-                      <a
-                        href={`https://pubmed.ncbi.nlm.nih.gov/${article.pmid}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-blue-600 underline"
-                      >
-                        PMID: {article.pmid}
-                      </a>
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td className="font-medium p-2 border">Title</td>
-                  {compareArticles.map(a => <td key={a.pmid} className="p-2 border">{a.title}</td>)}
-                </tr>
-                <tr>
-                  <td className="font-medium p-2 border">Authors</td>
-                  {compareArticles.map(a => <td key={a.pmid} className="p-2 border">{a.authors}</td>)}
-                </tr>
-                <tr>
-                  <td className="font-medium p-2 border">Year</td>
-                  {compareArticles.map(a => <td key={a.pmid} className="p-2 border">{a.publication_year}</td>)}
-                </tr>
-                <tr>
-                  <td className="font-medium p-2 border">Abstract</td>
-                  {compareArticles.map(a => <td key={a.pmid} className="p-2 border whitespace-pre-wrap">{a.abstract}</td>)}
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <ScrollArea className="h-[400px] border rounded-md p-4 mb-4">
-            {messages.map((msg, idx) => (
-              <div key={idx} className={`mb-3 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                <div
-                  className={`prose max-w-[80%] inline-block px-4 py-2 rounded-lg whitespace-pre-wrap ${
-                    msg.role === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-100 text-gray-900'
-                  }`}
-                >
-                  <ReactMarkdown rehypePlugins={[rehypeSanitize]}>
-                    {msg.content.replace(
-                      /PMID[:\s]*([0-9]+)/g,
-                      (_, id) => `[PMID: ${id}](https://pubmed.ncbi.nlm.nih.gov/${id})`
-                    )}
-                  </ReactMarkdown>
-                </div>
-              </div>
-            ))}
-            {loading && (
-              <div className="text-left mb-3">
-                <div className="inline-block px-4 py-2 rounded-lg bg-gray-100 text-gray-600 animate-pulse">
-                  Thinking...
-                </div>
-              </div>
-            )}
-          </ScrollArea>
-        )}
+        <motion.h1
+          className="text-4xl md:text-5xl font-bold text-gray-900 max-w-4xl"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.3 }}
+        >
+          The perfect{' '}
+          <span className="bg-gradient-to-r from-purple-500 to-pink-500 text-transparent bg-clip-text">
+            AI assistant
+          </span>{' '}
+          built for research.
+        </motion.h1>
 
-        <div className="flex gap-2">
-          <Input
-            placeholder="Ask PubGenie about any medical or research topic..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          />
-          <Button onClick={handleSend} disabled={loading}>Send</Button>
-        </div>
-      </div>
-    </ProtectedRoute>
+        <motion.p
+          className="mt-2 text-lg text-gray-500 max-w-xl"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.4 }}
+        >
+          From literature reviews to clinical insights, PubGenie helps you search
+          smarter, compare faster, and summarize research in seconds.
+        </motion.p>
+
+        <motion.div
+          className="mt-8 flex flex-col sm:flex-row gap-4"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.5 }}
+        >
+          <Link href="/signin">
+            <Button size="lg">Get Started</Button>
+          </Link>
+
+          <Button size="lg" variant="outline" asChild>
+            <a
+              href="https://github.com/your-repo"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center gap-2"
+            >
+              <Github className="w-4 h-4" />
+              Star on GitHub
+            </a>
+          </Button>
+        </motion.div>
+      </main>
+
+      <motion.footer
+        className="w-full text-center text-sm text-gray-400 pb-6"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.6 }}
+      >
+        © 2025 Alagappan Sellappan. All rights reserved.
+      </motion.footer>
+    </motion.div>
   )
 }
