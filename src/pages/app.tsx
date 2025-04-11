@@ -17,7 +17,8 @@ interface Message {
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
-  const [role, setRole] = useState<'student' | 'researcher' | 'clinician'>('student')
+  //const [role, setRole] = useState<'student' | 'researcher' | 'clinician'>('student')
+  const [role] = useState<'student' | 'researcher' | 'clinician'>('student')
   const [loading, setLoading] = useState(false)
 
   const router = useRouter()
@@ -74,7 +75,7 @@ export default function Home() {
 
         <h1 className="text-3xl font-bold mb-6">🧠 PubGenie</h1>
 
-        <div className="mb-4 flex gap-2 items-center">
+        {/* <div className="mb-4 flex gap-2 items-center">
           <select
             value={role}
             onChange={(e) => setRole(e.target.value as 'student' | 'researcher' | 'clinician')}
@@ -85,7 +86,7 @@ export default function Home() {
             <option value="clinician">Clinician</option>
           </select>
           <span className="text-muted-foreground text-sm">Tailors responses by role</span>
-        </div>
+        </div> */}
 
         <ScrollArea className="h-[400px] border rounded-md p-4 mb-4">
           {messages.map((msg, idx) => (

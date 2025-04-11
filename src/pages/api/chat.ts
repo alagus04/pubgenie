@@ -53,17 +53,6 @@ Respond with ONLY "yes" or "no".`
   return response.trim().toLowerCase() === 'yes'
 }
 
-// function extractTopicTagFromHistory(history: { role: string; content: string }[]): string | null {
-//   for (let i = history.length - 1; i >= 0; i--) {
-//     const msg = history[i]
-//     if (msg.role === 'assistant' && msg.content.includes('🧠 Topic:')) {
-//       const match = msg.content.match(/🧠 Topic: (.+)/)
-//       return match?.[1]?.trim() || null
-//     }
-//   }
-//   return null
-// }
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { prompt, role, compare, history = [] } = req.body
   if (!prompt || !role) return res.status(400).json({ error: 'Missing prompt or role' })
@@ -71,7 +60,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const isFollowUp = history.length > 0
     const topicShift = isFollowUp ? await isTopicShift(history, prompt) : false
-    // let articles = []
     let topicTag = ''
     const allPmids = new Set<string>()
 
@@ -146,12 +134,14 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
     } else {
-      const topicTag = await extractSmartSearchTerms(prompt, true)
+      topicTag = await extractSmartSearchTerms(prompt, true)
+      const pmidRegex = /PMID[:\s]*([0-9]+)/g
       for (const msg of history) {
         if (msg.role === 'assistant' && msg.content.includes(`🧠 Topic: ${topicTag}`)) {
-          const lines = msg.content.split('\n')
-          const pmids = lines.map((line: string) => line.match(/PMID: (\d+)/)?.[1]).filter(Boolean) as string[]
-          pmids.forEach((pmid) => allPmids.add(pmid))
+          const matches = [...msg.content.matchAll(pmidRegex)]
+          for (const match of matches) {
+            if (match[1]) allPmids.add(match[1])
+          }
         }
       }
     }
@@ -175,20 +165,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const pmidList = fetchedArticles.map(a => a.pmid).join(', ')
 
-    const reply = await generateGeminiContent([
+    const rawReply = await generateGeminiContent([
       {
         role: 'user',
         parts: [{
           text: isFollowUp && !topicShift
-            ? `You're a biomedical research assistant. This is a follow-up question. 🧠 Topic: ${topicTag}\n\nHere are the PMIDs of the articles we're referring to: ${pmidList}.\n\nUse your memory of the prior articles to answer this question if relevant. If this is a new topic, say that you need new articles to answer it.\n\nFollow-up Question: "${prompt}"`
+            ? `You're a biomedical research assistant.\n\n🧠 Topic: ${topicTag}\n\nHere are the PMIDs of the articles we're referring to: ${pmidList}.\n\nUse your memory of the prior articles to answer this question if relevant. If this is a new topic, say that you need new articles to answer it.\n\nFollow-up Question: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
             : compare
-              ? `You are a biomedical research assistant. 🧠 Topic: ${topicTag}\n\nCompare the following articles based on their key findings, methodologies, outcomes, and relevance. DO NOT use a table. Instead, present your findings in a clearly structured list using markdown headings and bullet points. Tailor the tone for a ${role}.\n\nUser Prompt: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
-              : `You are a biomedical research assistant. 🧠 Topic: ${topicTag}\n\nAnswer the following question using only the provided article content. Highlight key findings and include PMIDs. Tailor the tone for a ${role}.\n\nUser Question: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
+              ? `You are a biomedical research assistant.\n\n🧠 Topic: ${topicTag}\n\nCompare the following articles based on their key findings, methodologies, outcomes, and relevance. DO NOT use a table. Instead, present your findings in a clearly structured list using markdown headings and bullet points. Tailor the tone for a ${role}.\n\nUser Prompt: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
+              : `You are a biomedical research assistant.\n\n🧠 Topic: ${topicTag}\n\nAnswer the following question using only the provided article content. Highlight key findings and include PMIDs. Tailor the tone for a ${role}.\n\nUser Question: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
         }]
       }
     ])
 
-    return res.status(200).json({ reply })
+    const hiddenTopic = `<!-- 🧠 Topic: ${topicTag} -->\n\n`
+    return res.status(200).json({ reply: hiddenTopic + rawReply })
+
   } catch (err) {
     const error = err as unknown as { response?: { data?: unknown }, message?: string }
     console.error('Gemini Chat Error:', JSON.stringify(error.response?.data || error.message, null, 2))
