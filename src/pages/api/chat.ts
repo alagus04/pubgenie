@@ -53,16 +53,16 @@ Respond with ONLY "yes" or "no".`
   return response.trim().toLowerCase() === 'yes'
 }
 
-function extractTopicTagFromHistory(history: { role: string; content: string }[]): string | null {
-  for (let i = history.length - 1; i >= 0; i--) {
-    const msg = history[i]
-    if (msg.role === 'assistant' && msg.content.includes('🧠 Topic:')) {
-      const match = msg.content.match(/🧠 Topic: (.+)/)
-      return match?.[1]?.trim() || null
-    }
-  }
-  return null
-}
+// function extractTopicTagFromHistory(history: { role: string; content: string }[]): string | null {
+//   for (let i = history.length - 1; i >= 0; i--) {
+//     const msg = history[i]
+//     if (msg.role === 'assistant' && msg.content.includes('🧠 Topic:')) {
+//       const match = msg.content.match(/🧠 Topic: (.+)/)
+//       return match?.[1]?.trim() || null
+//     }
+//   }
+//   return null
+// }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   const { prompt, role, compare, history = [] } = req.body
@@ -71,7 +71,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   try {
     const isFollowUp = history.length > 0
     const topicShift = isFollowUp ? await isTopicShift(history, prompt) : false
-    let articles = []
+    // let articles = []
     let topicTag = ''
     const allPmids = new Set<string>()
 
