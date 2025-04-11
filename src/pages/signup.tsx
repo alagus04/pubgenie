@@ -45,7 +45,7 @@ export default function SignUpPage() {
       })
 
       router.push('/app')
-    } catch (error) {
+    } catch (_error) {
       setError('Sign up failed. Please try again.')
       setLoading(false)
     }
@@ -67,7 +67,7 @@ export default function SignUpPage() {
       })
 
       router.push('/app')
-    } catch (error) {
+    } catch (_error) {
       setError('Google sign-up failed.')
     }
   }
