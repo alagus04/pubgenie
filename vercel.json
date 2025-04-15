@@ -1,4 +1,5 @@
 {
+    "source": "src",
     "rewrites": [
       {
         "source": "/api/:path*",
