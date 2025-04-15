@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/router'
 import { auth } from '@/lib/firebase'
-import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } from 'firebase/auth'
+import { createUserWithEmailAndPassword} from 'firebase/auth'
 import { getFirestore, doc, setDoc } from 'firebase/firestore'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -66,11 +66,11 @@ export default function SignUpPage() {
 //         createdAt: new Date().toISOString()
 //       })
 
-      router.push('/app')
-    } catch {
-      setError('Google sign-up failed.')
-    }
-  }
+//       router.push('/app')
+//     } catch {
+//       setError('Google sign-up failed.')
+//     }
+//   }
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen px-4">
