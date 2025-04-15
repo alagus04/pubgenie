@@ -57,6 +57,10 @@ Respond with ONLY "yes" or "no".`
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
+    if (req.method !== 'POST') {
+        return res.status(405).json({ error: 'Method Not Allowed' })  // 🛡 protect against GET
+      }
+      
   const { prompt, role, compare, history = [], userId } = req.body
   if (!prompt || !role) return res.status(400).json({ error: 'Missing prompt or role' })
 
