@@ -7,6 +7,10 @@ import { extractSmartSearchTerms } from '@/lib/searchUtils'
 import { getFirestore } from 'firebase-admin/firestore'
 import '@/lib/firebaseAdmin' // ensure firebase admin is initialized
 
+if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
+  console.error('❌ Missing FIREBASE_SERVICE_ACCOUNT in env!')
+}
+
 const db = getFirestore()
 const EUTILS_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi'
 const EUTILS_FETCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi'
@@ -57,10 +61,10 @@ Respond with ONLY "yes" or "no".`
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-    if (req.method !== 'POST') {
-        return res.status(405).json({ error: 'Method Not Allowed' })  // 🛡 protect against GET
-      }
-      
+  if (req.method !== 'POST') {
+    return res.status(405).json({ error: 'Method Not Allowed' })
+  }
+
   const { prompt, role, compare, history = [], userId } = req.body
   if (!prompt || !role) return res.status(400).json({ error: 'Missing prompt or role' })
 
