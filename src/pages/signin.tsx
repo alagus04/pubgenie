@@ -3,8 +3,8 @@ import { useRouter } from 'next/router'
 import { auth } from '@/lib/firebase'
 import {
   signInWithEmailAndPassword,
-  GoogleAuthProvider,
-  signInWithPopup,
+//   GoogleAuthProvider,
+//   signInWithPopup,
   onAuthStateChanged
 } from 'firebase/auth'
 import { Input } from '@/components/ui/input'
