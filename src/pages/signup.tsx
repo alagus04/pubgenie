@@ -51,20 +51,20 @@ export default function SignUpPage() {
     }
   }
 
-  const handleGoogleSignUp = async () => {
-    const provider = new GoogleAuthProvider()
-    try {
-      const result = await signInWithPopup(auth, provider)
-      const user = result.user
+//   const handleGoogleSignUp = async () => {
+//     const provider = new GoogleAuthProvider()
+//     try {
+//       const result = await signInWithPopup(auth, provider)
+//       const user = result.user
 
-      await setDoc(doc(db, 'users', user.uid), {
-        firstName: '',
-        lastName: '',
-        email: user.email,
-        userType: '',
-        institution: '',
-        createdAt: new Date().toISOString()
-      })
+//       await setDoc(doc(db, 'users', user.uid), {
+//         firstName: '',
+//         lastName: '',
+//         email: user.email,
+//         userType: '',
+//         institution: '',
+//         createdAt: new Date().toISOString()
+//       })
 
       router.push('/app')
     } catch {

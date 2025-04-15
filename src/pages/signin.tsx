@@ -41,15 +41,15 @@ export default function SignInPage() {
     }
   }
 
-  const handleGoogleSignIn = async () => {
-    const provider = new GoogleAuthProvider()
-    try {
-      await signInWithPopup(auth, provider)
-      router.push('/app')
-    } catch {
-      setError('Google sign-in failed.')
-    }
-  }
+//   const handleGoogleSignIn = async () => {
+//     const provider = new GoogleAuthProvider()
+//     try {
+//       await signInWithPopup(auth, provider)
+//       router.push('/app')
+//     } catch {
+//       setError('Google sign-in failed.')
+//     }
+//   }
 
   return (
     <div className="flex flex-col items-center justify-center min-h-screen px-4">
