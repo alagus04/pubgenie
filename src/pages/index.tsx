@@ -1,6 +1,6 @@
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
-import { Github } from 'lucide-react'
+// import { Github } from 'lucide-react'
 import { motion } from 'framer-motion'
 
 export default function LandingPage() {

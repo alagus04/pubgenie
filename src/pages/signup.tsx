@@ -5,7 +5,7 @@ import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } f
 import { getFirestore, doc, setDoc } from 'firebase/firestore'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { FcGoogle } from 'react-icons/fc'
+// import { FcGoogle } from 'react-icons/fc'
 
 export default function SignUpPage() {
   const [firstName, setFirstName] = useState('')
