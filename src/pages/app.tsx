@@ -9,6 +9,7 @@ import ProtectedRoute from '@/components/ProtectedRoute'
 import { signOut } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
 
+
 interface Message {
   role: 'user' | 'assistant'
   content: string
@@ -30,30 +31,46 @@ export default function Home() {
 
   const handleSend = async () => {
     if (!input.trim()) return
-
+  
     const userMessage: Message = { role: 'user', content: input }
     const newMessages = [...messages, userMessage]
     setMessages(newMessages)
     setInput('')
     setLoading(true)
-
+  
     const isCompare = isComparePrompt(input)
-
-    const history = newMessages.slice(0, -1) // exclude current user message
-
+    const history = newMessages.slice(0, -1)
+  
+    // ✅ Grab the Firebase user
+    const firebaseUser = auth.currentUser
+    if (!firebaseUser) {
+      alert("You're not signed in.")
+      setLoading(false)
+      return
+    }
+  
+    // ✅ Include UID in request
     const res = await fetch('/api/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: input, role, compare: isCompare, history })
+      body: JSON.stringify({
+        prompt: input,
+        role,
+        compare: isCompare,
+        history,
+        userId: firebaseUser.uid
+      })
     })
+  
     const data = await res.json()
     console.log('REPLY FROM API:', data.reply)
-
+  
     const assistantMessage: Message = { role: 'assistant', content: data.reply }
     setMessages(prev => [...prev, assistantMessage])
-
+  
     setLoading(false)
   }
+  
 
   const handleSignOut = async () => {
     try {

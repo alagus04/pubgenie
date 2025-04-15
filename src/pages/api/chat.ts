@@ -4,7 +4,10 @@ import { generateGeminiContent } from '@/lib/gemini-rest'
 import axios from 'axios'
 import xml2js from 'xml2js'
 import { extractSmartSearchTerms } from '@/lib/searchUtils'
+import { getFirestore } from 'firebase-admin/firestore'
+import '@/lib/firebaseAdmin' // ensure firebase admin is initialized
 
+const db = getFirestore()
 const EUTILS_SEARCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esearch.fcgi'
 const EUTILS_FETCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi'
 const PUBMED_API_KEY = process.env.PUBMED_API_KEY
@@ -54,7 +57,7 @@ Respond with ONLY "yes" or "no".`
 }
 
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
-  const { prompt, role, compare, history = [] } = req.body
+  const { prompt, role, compare, history = [], userId } = req.body
   if (!prompt || !role) return res.status(400).json({ error: 'Missing prompt or role' })
 
   try {
@@ -63,7 +66,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let topicTag = ''
     const allPmids = new Set<string>()
 
-    if (!isFollowUp || topicShift) {
+    const isAskForMore = /more (studies|articles|research|examples)/i.test(prompt)
+    if (!isFollowUp || topicShift || isAskForMore) {
       topicTag = await extractSmartSearchTerms(prompt, false)
       const semanticQuery = topicTag
       let pmids = await tryQuery(semanticQuery)
@@ -177,6 +181,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }]
       }
     ])
+
+    if (userId) {
+      await db.collection('users')
+        .doc(userId)
+        .collection('queries')
+        .add({
+          prompt,
+          response: rawReply,
+          timestamp: new Date().toISOString(),
+          role,
+          topicTag,
+          pmids: Array.from(allPmids),
+          isFollowUp,
+          topicShift
+        })
+    }
 
     const hiddenTopic = `<!-- 🧠 Topic: ${topicTag} -->\n\n`
     return res.status(200).json({ reply: hiddenTopic + rawReply })

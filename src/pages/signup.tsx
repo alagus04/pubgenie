@@ -5,7 +5,7 @@ import { createUserWithEmailAndPassword, GoogleAuthProvider, signInWithPopup } f
 import { getFirestore, doc, setDoc } from 'firebase/firestore'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { FcGoogle } from 'react-icons/fc'
+// import { FcGoogle } from 'react-icons/fc'
 
 export default function SignUpPage() {
   const [firstName, setFirstName] = useState('')
@@ -78,18 +78,18 @@ export default function SignUpPage() {
         <h1 className="text-xl font-semibold text-center">Create a PubGenie Account</h1>
         <p className="text-center text-gray-500">Join and start exploring smarter research</p>
 
-        <button
+        {/* <button
           onClick={handleGoogleSignUp}
           className="w-full border px-4 py-2 rounded-md flex items-center justify-center gap-2 text-gray-600 hover:bg-gray-50 transition"
         >
           <FcGoogle className="text-xl" /> Sign up with Google
-        </button>
+        </button> */}
 
-        <div className="flex items-center gap-4">
+        {/* <div className="flex items-center gap-4">
           <div className="flex-1 h-px bg-gray-200" />
           <span className="text-sm text-gray-400">or</span>
           <div className="flex-1 h-px bg-gray-200" />
-        </div>
+        </div> */}
 
         <form onSubmit={handleSignUp} className="space-y-4">
           <Input placeholder="First Name" value={firstName} onChange={(e) => setFirstName(e.target.value)} required />
