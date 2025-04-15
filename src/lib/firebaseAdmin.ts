@@ -1,11 +1,11 @@
-// /lib/firebaseAdmin.ts
 import { initializeApp, cert, getApps } from 'firebase-admin/app'
 import { getAuth } from 'firebase-admin/auth'
-import serviceAccount from '../../serviceAccountKey.json' // Adjust path if needed
+
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT!)
 
 if (!getApps().length) {
   initializeApp({
-    credential: cert(serviceAccount as any),
+    credential: cert(serviceAccount),
   })
 }
 
