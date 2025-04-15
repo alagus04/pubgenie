@@ -85,7 +85,7 @@ export default function LandingPage() {
             <Button size="lg">Get Started</Button>
           </Link>
 
-          <Button size="lg" variant="outline" asChild>
+          {/* <Button size="lg" variant="outline" asChild>
             <a
               href="https://github.com/your-repo"
               target="_blank"
@@ -95,7 +95,7 @@ export default function LandingPage() {
               <Github className="w-4 h-4" />
               Star on GitHub
             </a>
-          </Button>
+          </Button> */}
         </motion.div>
       </main>
 

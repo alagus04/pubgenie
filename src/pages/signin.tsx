@@ -57,18 +57,18 @@ export default function SignInPage() {
         <h1 className="text-xl font-semibold text-center">Sign in to PubGenie</h1>
         <p className="text-center text-gray-500">Welcome back! Please sign in to continue</p>
 
-        <button
+        {/* <button
           onClick={handleGoogleSignIn}
           className="w-full border px-4 py-2 rounded-md flex items-center justify-center gap-2 text-gray-600 hover:bg-gray-50 transition"
         >
           <FcGoogle className="text-xl" /> Continue with Google
-        </button>
+        </button> */}
 
-        <div className="flex items-center gap-4">
+        {/* <div className="flex items-center gap-4">
           <div className="flex-1 h-px bg-gray-200" />
           <span className="text-sm text-gray-400">or</span>
           <div className="flex-1 h-px bg-gray-200" />
-        </div>
+        </div> */}
 
         <form onSubmit={handleSignIn} className="space-y-4">
           <Input
