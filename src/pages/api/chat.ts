@@ -5,7 +5,7 @@ import axios from 'axios'
 import xml2js from 'xml2js'
 import { extractSmartSearchTerms } from '@/lib/searchUtils'
 import { getFirestore } from 'firebase-admin/firestore'
-import '@/lib/firebaseAdmin' // ensure firebase admin is initialized
+import '@/lib/firebaseAdmin'
 
 if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
   console.error('❌ Missing FIREBASE_SERVICE_ACCOUNT in env!')
@@ -17,6 +17,7 @@ const EUTILS_FETCH = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi'
 const PUBMED_API_KEY = process.env.PUBMED_API_KEY
 
 async function tryQuery(query: string) {
+  console.log('🔍 Trying PubMed query:', query)
   const searchParams = new URLSearchParams({
     db: 'pubmed',
     term: query,
@@ -27,6 +28,7 @@ async function tryQuery(query: string) {
   })
 
   const searchRes = await axios.get(`${EUTILS_SEARCH}?${searchParams}`)
+  console.log('📥 PubMed response received')
   return searchRes.data?.esearchresult?.idlist || []
 }
 
@@ -50,6 +52,7 @@ Based on the above, is the new message about a **different biomedical topic** th
 
 Respond with ONLY "yes" or "no".`
 
+  console.log('🧠 Checking for topic shift...')
   const response = await generateGeminiContent([
     {
       role: 'user',
@@ -57,6 +60,7 @@ Respond with ONLY "yes" or "no".`
     }
   ])
 
+  console.log('🧠 Topic shift result:', response)
   return response.trim().toLowerCase() === 'yes'
 }
 
@@ -69,6 +73,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   if (!prompt || !role) return res.status(400).json({ error: 'Missing prompt or role' })
 
   try {
+    console.log('🔁 Chat API called with prompt:', prompt)
     const isFollowUp = history.length > 0
     const topicShift = isFollowUp ? await isTopicShift(history, prompt) : false
     let topicTag = ''
@@ -76,6 +81,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const isAskForMore = /more (studies|articles|research|examples)/i.test(prompt)
     if (!isFollowUp || topicShift || isAskForMore) {
+      console.log('🔍 Extracting new topic tag')
       topicTag = await extractSmartSearchTerms(prompt, false)
       const semanticQuery = topicTag
       let pmids = await tryQuery(semanticQuery)
@@ -96,11 +102,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
       pmids.forEach((pmid: string) => allPmids.add(pmid))
 
+      console.log('🔄 Checking for already fetched articles in Supabase')
       const { data: existing } = await supabase.from('articles').select('pmid')
       const existingPmids = new Set((existing || []).map(a => a.pmid))
       const missingPmids = pmids.filter((pmid: string) => !existingPmids.has(pmid))
 
       if (missingPmids.length > 0) {
+        console.log('⬇️ Fetching missing PMIDs:', missingPmids)
         const fetchParams = new URLSearchParams({
           db: 'pubmed',
           id: missingPmids.join(','),
@@ -135,6 +143,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           const journal = articleData.Journal?.Title || 'N/A'
           const pubDate = articleData.Journal?.JournalIssue?.PubDate?.Year || 'N/A'
 
+          console.log('📝 Upserting article:', pmid)
           await supabase.from('articles').upsert({
             pmid,
             title,
@@ -146,6 +155,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         }
       }
     } else {
+      console.log('🔁 Follow-up using previously fetched articles')
       topicTag = await extractSmartSearchTerms(prompt, true)
       const pmidRegex = /PMID[:\s]*([0-9]+)/g
       for (const msg of history) {
@@ -159,15 +169,18 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     }
 
     if (!allPmids.size) {
+      console.warn('⚠️ No PMIDs found for summarization')
       return res.status(200).json({ reply: "I couldn't find any articles to summarize." })
     }
 
+    console.log('📦 Fetching article metadata for:', [...allPmids])
     const { data: fetchedArticles } = await supabase
       .from('articles')
       .select('*')
       .in('pmid', Array.from(allPmids))
 
     if (!fetchedArticles || fetchedArticles.length === 0) {
+      console.warn('⚠️ No article metadata retrieved')
       return res.status(200).json({ reply: 'No articles found for summarization.' })
     }
 
@@ -177,6 +190,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const pmidList = fetchedArticles.map(a => a.pmid).join(', ')
 
+    console.log('🤖 Sending final request to Gemini')
     const rawReply = await generateGeminiContent([
       {
         role: 'user',
@@ -191,6 +205,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     ])
 
     if (userId) {
+      console.log('📥 Logging user interaction to Firestore')
       await db.collection('users')
         .doc(userId)
         .collection('queries')
@@ -211,7 +226,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
   } catch (err) {
     const error = err as unknown as { response?: { data?: unknown }, message?: string }
-    console.error('Gemini Chat Error:', JSON.stringify(error.response?.data || error.message, null, 2))
+    console.error('❌ Gemini Chat Error:', JSON.stringify(error.response?.data || error.message || err, null, 2))
     return res.status(500).json({ error: 'Something went wrong while generating the summary.' })
   }
 }
