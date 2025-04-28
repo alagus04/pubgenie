@@ -116,12 +116,13 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     try {
         console.log('📩 Request received:', { prompt, role, compare, historyLength: history.length, userId })
       
-        const isFollowUp = history.length > 0
+        const isFollowUp = history && history.length > 0;
+        const isFirstMessage = !history || history.length === 0;
         const topicShift = isFollowUp ? await isTopicShift(history, prompt) : false
         console.log('🔄 Topic Shift:', topicShift)
       
         let intent: 'vague' | 'general' | 'specific' = 'specific'
-        const shouldClassify = !isFollowUp || topicShift
+        const shouldClassify = isFirstMessage || !isFollowUp || topicShift
       
         if (shouldClassify) {
           intent = await classifyPromptIntent(prompt)
@@ -149,7 +150,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     const allPmids = new Set<string>()
 
     const isAskForMore = /more (studies|articles|research|examples)/i.test(prompt)
-    if (!isFollowUp || topicShift || isAskForMore) {
+    if (isFirstMessage || !isFollowUp || topicShift || isAskForMore) {
       console.log('🚀 New search triggered')
       topicTag = await extractSmartSearchTerms(prompt, false)
       const semanticQuery = topicTag
@@ -167,7 +168,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         logQueryDebug('Fallback prompt', fallbackQuery, pmids)
       }
 
-      if (!pmids.length) return res.status(200).json({ reply: "I couldn't find any articles related to your query." })
+      if (!pmids.length) {
+        console.warn('⚠️ Semantic and fallback queries failed. Trying emergency broad search.')
+      
+        const emergencyFallback = 'genocide AND international law'
+        pmids = await tryQuery(emergencyFallback)
+        logQueryDebug('Emergency fallback query', emergencyFallback, pmids)
+      }
+      
+      if (!pmids.length) {
+        console.warn('❗ No PMIDs even after emergency fallback.')
+        return res.status(200).json({ reply: "I couldn't find any articles related to your query." })
+      }
+      
+      pmids.forEach((pmid: string) => allPmids.add(pmid))
 
       pmids.forEach((pmid: string) => allPmids.add(pmid))
 
@@ -264,15 +278,79 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       return res.status(200).json({ reply: "I couldn't find any articles to summarize." })
     }
 
-    const { data: fetchedArticles } = await supabase
-      .from('articles')
-      .select('*')
-      .in('pmid', Array.from(allPmids))
-
-    if (!fetchedArticles || fetchedArticles.length === 0) {
-      console.warn('❗ No articles found in Supabase')
-      return res.status(200).json({ reply: 'No articles found for summarization.' })
+    let { data: fetchedArticles } = await supabase
+    .from('articles')
+    .select('*')
+    .in('pmid', Array.from(allPmids))
+  
+  if (!fetchedArticles || fetchedArticles.length === 0) {
+    console.warn('❗ No articles found in Supabase. Attempting to re-fetch missing articles.')
+  
+    // Attempt re-fetch from PubMed directly
+    const fetchParams = new URLSearchParams({
+      db: 'pubmed',
+      id: Array.from(allPmids).join(','),
+      retmode: 'xml',
+      api_key: PUBMED_API_KEY || ''
+    })
+  
+    try {
+      const fetchRes = await axios.get(`${EUTILS_FETCH}?${fetchParams}`)
+      const parsed = await xml2js.parseStringPromise(fetchRes.data, { explicitArray: false })
+      const articlesFetched = parsed.PubmedArticleSet.PubmedArticle || []
+      const inserts = Array.isArray(articlesFetched) ? articlesFetched : [articlesFetched]
+  
+      console.log(`📄 Re-fetched and parsed ${inserts.length} articles`)
+  
+      for (const article of inserts) {
+        const pmid = article.MedlineCitation.PMID._ || article.MedlineCitation.PMID
+        const articleData = article.MedlineCitation.Article
+  
+        const title = articleData.ArticleTitle || 'N/A'
+        let abstract = 'N/A'
+        const abstractData = articleData.Abstract?.AbstractText
+        if (typeof abstractData === 'string') {
+          abstract = abstractData
+        } else if (Array.isArray(abstractData)) {
+          abstract = abstractData.map(part => (typeof part === 'string' ? part : part._ || '')).join(' ')
+        } else if (typeof abstractData === 'object' && abstractData._) {
+          abstract = abstractData._
+        }
+  
+        const authorsArr = articleData.AuthorList?.Author || []
+        const authors = Array.isArray(authorsArr)
+          ? authorsArr.map(a => `${a.ForeName || ''} ${a.LastName || ''}`.trim()).join(', ')
+          : ''
+        const journal = articleData.Journal?.Title || 'N/A'
+        const pubDate = articleData.Journal?.JournalIssue?.PubDate?.Year || 'N/A'
+  
+        await supabase.from('articles').upsert({
+          pmid,
+          title,
+          abstract,
+          authors,
+          journal,
+          publication_year: pubDate
+        })
+      }
+  
+      // Re-fetch from Supabase after inserting
+      const refetch = await supabase
+        .from('articles')
+        .select('*')
+        .in('pmid', Array.from(allPmids))
+        
+      fetchedArticles = refetch.data || []
+  
+    } catch (error) {
+      console.error('❌ Error while emergency fetching articles:', error)
     }
+  }
+  
+  if (!fetchedArticles || fetchedArticles.length === 0) {
+    console.warn('❗ Still no articles after re-fetching. Giving up.')
+    return res.status(200).json({ reply: 'No articles found for summarization.' })
+  }
 
     const combinedAbstracts = fetchedArticles
       .map(a => `Title: ${a.title}\nAuthors: ${a.authors}\nJournal: ${a.journal} (${a.publication_year})\nAbstract: ${a.abstract}\nPMID: ${a.pmid}`)
