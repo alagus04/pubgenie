@@ -1,15 +1,22 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/router'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import ReactMarkdown from 'react-markdown'
-//import rehypeSanitize from 'rehype-sanitize'
 import rehypeRaw from 'rehype-raw'
 import remarkGfm from 'remark-gfm'
 import ProtectedRoute from '@/components/ProtectedRoute'
 import { signOut } from 'firebase/auth'
 import { auth } from '@/lib/firebase'
+import { doc, getDoc, getDocs, collection, updateDoc, deleteDoc, serverTimestamp, setDoc } from 'firebase/firestore'
+import { db } from '@/lib/firebase'
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem
+} from '@/components/ui/dropdown-menu'
 
 interface Article {
   pmid: string
@@ -46,12 +53,38 @@ function dedupeClosingLines(text: string): string {
 
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([])
-  //const [showSources, setShowSources] = useState<Record<number, boolean>>({})
   const [input, setInput] = useState('')
   const [role] = useState<'student' | 'researcher' | 'clinician'>('student')
   const [loading, setLoading] = useState(false)
+  const [savedChats, setSavedChats] = useState<{ id: string; title: string; createdAt: Date }[]>([])
+  const [chatId, setChatId] = useState<string | null>(null)
 
   const router = useRouter()
+
+  const fetchChats = async () => {
+    const user = auth.currentUser
+    if (!user) return
+
+    const snapshot = await getDocs(collection(db, 'users', user.uid, 'queries'))
+    const loadedChats = snapshot.docs
+      .map(doc => ({
+        id: doc.id,
+        title: doc.data().title || 'Untitled',
+        createdAt: doc.data().createdAt?.toDate() || new Date(),
+      }))
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+    setSavedChats(loadedChats)
+  }
+
+useEffect(() => {
+  const unsubscribe = auth.onAuthStateChanged((user) => {
+    if (user) {
+      fetchChats()
+    }
+  })
+
+  return () => unsubscribe()
+}, [])
 
   const isComparePrompt = (text: string) => {
     const keywords = ['compare', 'difference', 'vs', 'versus']
@@ -97,8 +130,7 @@ export default function Home() {
       articles: data.reply.articles ?? [],
       topic: data.reply.topic ?? ''
     }
-    
-    // 👉 ADD THIS CONSOLE.LOG RIGHT HERE
+
     console.log('🚀 Assistant raw reply (before saving to messages):', assistantContent.text)
 
     const assistantMessage: Message = {
@@ -106,8 +138,23 @@ export default function Home() {
       content: assistantContent
     }
 
-    setMessages(prev => [...prev, assistantMessage])
-    setLoading(false)
+// ✅ Auto-save the chat to Firestore
+const currentChatId = chatId || crypto.randomUUID()
+setChatId(currentChatId)
+
+const chatRef = doc(db, 'users', firebaseUser.uid, 'queries', currentChatId)
+
+await setDoc(chatRef, {
+  messages: [...newMessages, assistantMessage],
+  title: newMessages[0]?.content?.toString().slice(0, 50) || 'Untitled Chat',
+  createdAt: serverTimestamp()
+})
+
+await fetchChats()
+
+// ✅ Then finish the interaction
+setMessages(prev => [...prev, assistantMessage])
+setLoading(false)
   }
 
   const handleSignOut = async () => {
@@ -120,22 +167,146 @@ export default function Home() {
     }
   }
 
+  const loadChat = async (chatId: string) => {
+    const user = auth.currentUser
+    if (!user) return
+
+    const docRef = doc(db, 'users', user.uid, 'queries', chatId)
+    const docSnap = await getDoc(docRef)
+
+    if (docSnap.exists()) {
+      const data = docSnap.data()
+      setMessages(data.messages || [])
+    } else {
+      console.warn('Chat not found')
+    }
+  }
+
+  const handleDelete = async (chatId: string) => {
+    const user = auth.currentUser
+    if (!user) return
+  
+    await deleteDoc(doc(db, 'users', user.uid, 'queries', chatId))
+    setSavedChats(prev => prev.filter(chat => chat.id !== chatId))
+  }
+  
+  const handleRename = async (chatId: string) => {
+    const newTitle = prompt("Enter a new title:")
+    if (!newTitle) return
+  
+    const user = auth.currentUser
+    if (!user) return
+  
+    await updateDoc(doc(db, 'users', user.uid, 'queries', chatId), {
+      title: newTitle
+    })
+  
+    setSavedChats(prev =>
+      prev.map(chat =>
+        chat.id === chatId ? { ...chat, title: newTitle } : chat
+      )
+    )
+  }
+
+  const renameChat = async (chatId: string) => {
+    const user = auth.currentUser
+    if (!user) return
+  
+    const newTitle = prompt('Enter new chat title:')
+    if (!newTitle || newTitle.trim() === '') return
+  
+    const chatRef = doc(db, 'users', user.uid, 'queries', chatId)
+    await setDoc(chatRef, { title: newTitle }, { merge: true })
+  
+    // Refresh the sidebar
+    const snapshot = await getDocs(collection(db, 'users', user.uid, 'queries'))
+    const loadedChats = snapshot.docs.map(doc => ({
+      id: doc.id,
+      title: doc.data().title || 'Untitled',
+      createdAt: doc.data().createdAt?.toDate() || new Date()
+    })).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+  
+    setSavedChats(loadedChats)
+  }
+
   return (
     <ProtectedRoute>
-      <div className="max-w-7xl mx-auto px-4 py-8">
-        <div className="w-full flex justify-end items-center mb-4">
-          <Button variant="outline" onClick={handleSignOut}>Sign Out</Button>
-        </div>
+      <div className="flex h-screen overflow-hidden">
+        {/* Sidebar */}
+        <aside className="w-64 bg-gray-100 border-r fixed left-0 top-0 h-screen flex flex-col justify-between px-4 py-6 text-black">
+  {/* Top section: Title + chats */}
+  <div className="flex flex-col flex-grow overflow-y-auto">
+    <h2 className="text-2xl font-bold mb-4">🧠 PubGenie</h2>
 
-        <h1 className="text-3xl font-bold mb-6">🧠 PubGenie</h1>
+    <Button
+      variant="outline"
+      className="w-full text-left justify-start text-sm mb-2 text-black bg-white"
+      onClick={() => setMessages([])}
+    >
+      + New Chat
+    </Button>
 
-        <ScrollArea className="h-[70vh] border rounded-md p-4 mb-4">
-          {messages.map((msg, idx) => {
-            const isStructured = typeof msg.content === 'object'
-            const text = isStructured ? (msg.content as { text: string }).text : msg.content
-            const articles = isStructured ? (msg.content as { articles?: Article[] }).articles ?? null : null
+    {savedChats.length === 0 ? (
+  <p className="text-sm text-gray-500 mt-4">No saved chats yet</p>
+) : (
+  savedChats.map(chat => (
+    <div key={chat.id} className="flex items-center justify-between group hover:bg-gray-200 rounded px-2">
+      <button
+        onClick={() => loadChat(chat.id)}
+        className="text-left text-sm py-2 flex-1 truncate text-black"
+      >
+        {chat.title}
+      </button>
 
-            function cleanMarkdown(text: string): string {
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button className="text-gray-500 hover:text-black opacity-0 group-hover:opacity-100 px-1">
+            ⋯
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end">
+          <DropdownMenuItem onClick={() => handleRename(chat.id)}>
+            Rename
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => handleDelete(chat.id)}
+            className="text-red-500"
+          >
+            Delete
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  ))
+)}
+  </div>
+
+  {/* Bottom section: Settings + Sign Out */}
+  <div className="mt-6 space-y-2">
+    <Button variant="outline" className="w-full justify-start text-black bg-white">
+      Settings
+    </Button>
+    <Button variant="outline" className="w-full justify-start text-black bg-white" onClick={handleSignOut}>
+      Sign Out
+    </Button>
+  </div>
+</aside>
+
+        {/* Main Content */}
+        <div className="ml-64 flex-1 flex flex-col overflow-hidden">
+          {/* <div className="flex justify-end items-center mb-4"> */}
+          {/*   <Button variant="outline" onClick={handleSignOut}>Sign Out</Button> */}
+          {/* </div> */}
+
+          {/* <h1 className="text-3xl font-bold mb-6 text-black">🧠 PubGenie</h1> */}
+
+          <ScrollArea className="flex-1 border rounded-md p-4 mb-4 overflow-y-auto">
+            {messages.map((msg, idx) => {
+              const isStructured = typeof msg.content === 'object'
+              const text = isStructured ? (msg.content as { text: string }).text : msg.content
+              const articles = isStructured ? (msg.content as { articles?: Article[] }).articles ?? null : null
+
+              function cleanMarkdown(text: string): string {
                 return text
               
                   // 1. Normalize broken link spacing: https: // → https://
@@ -179,111 +350,99 @@ export default function Home() {
                   // 🔥 NEW RULE to strip dangling journal list (parentheses only at the end)
                   .replace(/(\(\s*.+?\s*\)\s*)+$/, '')
               }
-              // function titleCase(label: string): string {
-              //   return label
-              //     .trim()
-              //     .split(/\s+/)
-              //     .map(word => word.length > 2 ? word[0].toUpperCase() + word.slice(1).toLowerCase() : word.toLowerCase())
-              //     .join(' ')
-              // }
-            const markdownText = typeof text === 'string'
-              ? cleanMarkdown(
-              dedupeClosingLines(
-                  text
-                    .replace(/\*\*\s+/gm, '**')
-                    .replace(/PMID[:\s]*([0-9]+)/g, (_, id) => {
-                      const match = articles?.find((a) => a.pmid === id)
-                      const label = match?.journal?.trim() || 'PubMed'
-                      return `PMID: ${id} ([${label}](https://pubmed.ncbi.nlm.nih.gov/${id}))`
-                    })
-                    .replace(/(?<=\n)(\d+\..+?)\n/g, '\n<hr />\n$1\n')
-                ))
-              : ''
 
-            return (
-              <div key={idx} className={`mb-3 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                <div className={`prose chat-markdown max-w-[80%] inline-block px-4 py-2 rounded-lg whitespace-pre-wrap overflow-x-auto ${msg.role === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-50 text-gray-900'}`}>
-                <div className="prose chat-markdown text-[15px] leading-tight [&_a]:underline [&_a]:font-semibold [&_a]:text-black [&_ul]:pl-5 [&_ul>li]:pl-0 [&_ul>li]:my-1 [&_p]:my-1">
-                    <ReactMarkdown
-                      rehypePlugins={[rehypeRaw]}
-                      remarkPlugins={[remarkGfm]}
-                      // components={{
-                      //   a: ({ node, ...props }) => (
-                      //     <a {...props} target="_blank" rel="noopener noreferrer" />
-                      //   ),
-                      // }}
-                    >
-                      {markdownText}
-                    </ReactMarkdown>
-                  </div>
+              const markdownText = typeof text === 'string'
+                ? cleanMarkdown(
+                    dedupeClosingLines(
+                      text
+                        .replace(/\*\*\s+/gm, '**')
+                        .replace(/PMID[:\s]*([0-9]+)/g, (_, id) => {
+                          const match = articles?.find((a) => a.pmid === id)
+                          const label = match?.journal?.trim() || 'PubMed'
+                          return `[**_${label}_** (PMID: ${id})](https://pubmed.ncbi.nlm.nih.gov/${id})`
+                        })
+                        .replace(/(?<=\n)(\d+\..+?)\n/g, '\n<hr />\n$1\n')
+                    )
+                  )
+                : ''
 
-                  {msg.role === 'assistant' && articles && (
-                    <div className="mt-4 space-y-4">
-                      {articles.map(article => (
-                        <div key={article.pmid} className="border rounded-lg p-4 bg-gray-50 shadow-sm">
-                          <div className="font-semibold">{article.title}</div>
-                          <div className="text-sm text-gray-600 mb-1">{article.authors}</div>
-                          <div className="text-sm italic text-gray-500">
-                            {article.journal} ({article.year})
-                          </div>
-                          {article.abstract && (
-                            <div className="mt-2 text-sm text-gray-700 line-clamp-4">
-                              {article.abstract.slice(0, 300)}...
-                            </div>
-                          )}
-                          <a
-                            href={`https://pubmed.ncbi.nlm.nih.gov/${article.pmid}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-600 text-sm mt-2 inline-block"
-                          >
-                            View on PubMed ↗
-                          </a>
-                        </div>
-                      ))}
+              return (
+                <div key={idx} className={`mb-3 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                  <div className={`prose chat-markdown max-w-[80%] inline-block px-4 py-2 rounded-lg whitespace-pre-wrap overflow-x-auto ${msg.role === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-50 text-gray-900'}`}>
+                    <div className="prose chat-markdown text-[15px] leading-tight bg-transparent text-black 
+                    prose-p:text-black prose-h1:text-black prose-h2:text-black prose-strong:text-black
+                    [&_a]:underline [&_a]:font-semibold [&_a]:text-black">
+                      <ReactMarkdown rehypePlugins={[rehypeRaw]} remarkPlugins={[remarkGfm]}>
+                        {markdownText}
+                      </ReactMarkdown>
                     </div>
-                  )}
+                    {msg.role === 'assistant' && articles && (
+                      <div className="mt-4 space-y-4">
+                        {articles.map(article => (
+                          <div key={article.pmid} className="border rounded-lg p-4 bg-gray-50 shadow-sm">
+                            <div className="font-semibold">{article.title}</div>
+                            <div className="text-sm text-gray-600 mb-1">{article.authors}</div>
+                            <div className="text-sm italic text-gray-500">
+                              {article.journal} ({article.year})
+                            </div>
+                            {article.abstract && (
+                              <div className="mt-2 text-sm text-gray-700 line-clamp-4">
+                                {article.abstract.slice(0, 300)}...
+                              </div>
+                            )}
+                            <a
+                              href={`https://pubmed.ncbi.nlm.nih.gov/${article.pmid}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 text-sm mt-2 inline-block"
+                            >
+                              View on PubMed ↗
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+            {loading && (
+              <div className="text-left mb-3">
+                <div className="inline-block px-4 py-2 rounded-lg bg-gray-100">
+                  <div className="flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                  </div>
                 </div>
               </div>
-            )
-          })}
+            )}
+          </ScrollArea>
 
-          {loading && (
-            <div className="text-left mb-3">
-              <div className="inline-block px-4 py-2 rounded-lg bg-gray-100">
-                <div className="flex items-center space-x-1">
-                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
-                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                  <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
-                </div>
-              </div>
-            </div>
-          )}
-        </ScrollArea>
+          <div className="px-6 py-4 border-t flex gap-2">
+            <Input
+              className="text-black"
+              placeholder="Ask PubGenie about any medical or research topic..."
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSend()}
+            />
+            <Button onClick={handleSend} disabled={loading}>Send</Button>
+          </div>
 
-        <div className="flex gap-2">
-          <Input
-            placeholder="Ask PubGenie about any medical or research topic..."
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-          />
-          <Button onClick={handleSend} disabled={loading}>Send</Button>
+          <footer className="px-6 py-4 text-center text-sm text-gray-500">
+            Copyright ©2025{' '}
+            <a
+              href="https://www.linkedin.com/in/alsellappan/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:underline"
+            >
+              Alagappan Sellappan
+            </a>{' '}| All Rights Reserved
+          </footer>
         </div>
       </div>
-
-      <footer className="mt-8 text-center text-sm text-gray-500">
-        Copyright ©2025{' '}
-        <a
-          href="https://www.linkedin.com/in/alsellappan/"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="text-blue-600 hover:underline"
-        >
-          Alagappan Sellappan
-        </a>{' '}
-        | All Rights Reserved
-      </footer>
     </ProtectedRoute>
   )
 }

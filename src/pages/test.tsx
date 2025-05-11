@@ -88,11 +88,15 @@ export default function Home() {
     })
 
     const data = await res.json()
+    console.log('REPLY FROM API:', data.reply)
+
     const assistantContent: Message['content'] = {
       text: typeof data.reply === 'string' ? data.reply : data.reply.text,
       articles: data.reply.articles ?? [],
       topic: data.reply.topic ?? ''
     }
+
+    console.log('🚀 Assistant raw reply (before saving to messages):', assistantContent.text)
 
     const assistantMessage: Message = {
       role: 'assistant',
@@ -106,9 +110,10 @@ export default function Home() {
   const handleSignOut = async () => {
     try {
       await signOut(auth)
+      console.log('✅ Successfully signed out')
       router.push('/')
     } catch (err) {
-      console.error('Sign out error:', err)
+      console.error('❌ Sign out error:', err)
     }
   }
 
@@ -126,115 +131,129 @@ export default function Home() {
           </div>
         </aside>
 
-        {/* Main Chat Area */}
-        <div className="ml-64 flex-1 flex flex-col overflow-hidden px-6 py-6">
-          <div className="flex-1 overflow-y-auto">
-            <ScrollArea className="border rounded-md p-4 mb-4">
-              {messages.map((msg, idx) => {
-                const isStructured = typeof msg.content === 'object'
-                const text = isStructured ? (msg.content as { text: string }).text : msg.content
-                const articles = isStructured ? (msg.content as { articles?: Article[] }).articles ?? null : null
+        {/* Main Content */}
+        <div className="ml-64 flex-1 flex flex-col px-6 py-6 overflow-hidden">
+          <div className="flex justify-end items-center mb-4">
+            <Button variant="outline" onClick={handleSignOut}>Sign Out</Button>
+          </div>
 
-                function cleanMarkdown(text: string): string {
-                    return text
-                  
-                      // 1. Normalize broken link spacing: https: // → https://
-                      .replace(/https:\s*\/\//g, 'https://')
-                  
-                      // 2. Fix malformed markdown links: [Label] (https://...) → [Label](https://...)
-                      .replace(/\[\s*([^\]]+?)\s*\]\s*\(\s*https:\/\/\s*([^)]+?)\s*\)/g, '[$1](https://$2)')
-                  
-                      // 3. Convert [Label](https://pubmed...) to (Label) with hyperlink
-                      .replace(/\(\[([^\]]+?)\]\(https:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/(\d{6,})\)\)/gi, (_, label, pmid) => {
-                        return `([${label}](https://pubmed.ncbi.nlm.nih.gov/${pmid}))`;
-                      })
-                  
-                      // 4. Ensure PubMed links are wrapped in parens if not already
-                      .replace(/(?<!\()(\[.*?\]\(https:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/\d+\))(?!\))/g, '($1)')
-    
-                      // Hide PMID lines from rendered output
-                      .replace(/^PMID:\s*\d+\s*/gm, '')
-                  
-                      // 5. Fix bold headers: **Label: ** → **Label:** (with proper spacing)
-                      .replace(/\*\*\s*(.+?)\s*:\s*\*\*/g, '**$1:**')
-                  
-                      // 6. Fix any bold that’s missing spacing after
-                      .replace(/(\*\*[^\*]+?\*\*)(?=\S)/g, '$1 ')
-                  
-                      // 7. Remove extra spaces before commas/periods/etc.
-                      .replace(/\s+([,.:;!?])/g, '$1')
-                  
-                      // 8. Fix bullets: * or - with or without space → -
-                      .replace(/^\s*[-*]\s+/gm, '- ')
-                  
-                      // 9. Remove newline between bullet and its text
-                      .replace(/-\s*\n\s*/g, '- ')
-                  
-                      // 10. Add blank line before headings like ### or ##
-                      .replace(/(?<!\n)\s*(#+\s+)/g, '\n\n$1')
-                  
-                      // 11. Normalize extra newlines
-                      .replace(/\n{3,}/g, '\n\n')
-    
-                      // 🔥 NEW RULE to strip dangling journal list (parentheses only at the end)
-                      .replace(/(\(\s*.+?\s*\)\s*)+$/, '')
-                  }
+          <h1 className="text-3xl font-bold mb-6">🧠 PubGenie</h1>
 
-                const markdownText = typeof text === 'string'
-                  ? cleanMarkdown(dedupeClosingLines(text))
-                  : ''
+          <ScrollArea className="flex-1 border rounded-md p-4 mb-4 overflow-y-auto">
+            {messages.map((msg, idx) => {
+              const isStructured = typeof msg.content === 'object'
+              const text = isStructured ? (msg.content as { text: string }).text : msg.content
+              const articles = isStructured ? (msg.content as { articles?: Article[] }).articles ?? null : null
 
-                return (
-                  <div key={idx} className={`mb-3 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
-                    <div className={`prose chat-markdown max-w-[80%] inline-block px-4 py-2 rounded-lg whitespace-pre-wrap overflow-x-auto ${msg.role === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-50 text-gray-900'}`}>
-                      <div className="prose chat-markdown text-[15px] leading-tight">
-                        <ReactMarkdown rehypePlugins={[rehypeRaw]} remarkPlugins={[remarkGfm]}>
-                          {markdownText}
-                        </ReactMarkdown>
-                      </div>
-                      {msg.role === 'assistant' && articles && (
-                        <div className="mt-4 space-y-4">
-                          {articles.map(article => (
-                            <div key={article.pmid} className="border rounded-lg p-4 bg-gray-50 shadow-sm">
-                              <div className="font-semibold">{article.title}</div>
-                              <div className="text-sm text-gray-600 mb-1">{article.authors}</div>
-                              <div className="text-sm italic text-gray-500">
-                                {article.journal} ({article.year})
-                              </div>
-                              {article.abstract && (
-                                <div className="mt-2 text-sm text-gray-700 line-clamp-4">
-                                  {article.abstract.slice(0, 300)}...
-                                </div>
-                              )}
-                              <a
-                                href={`https://pubmed.ncbi.nlm.nih.gov/${article.pmid}`}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="text-blue-600 text-sm mt-2 inline-block"
-                              >
-                                View on PubMed ↗
-                              </a>
+              function cleanMarkdown(text: string): string {
+                return text
+              
+                  // 1. Normalize broken link spacing: https: // → https://
+                  .replace(/https:\s*\/\//g, 'https://')
+              
+                  // 2. Fix malformed markdown links: [Label] (https://...) → [Label](https://...)
+                  .replace(/\[\s*([^\]]+?)\s*\]\s*\(\s*https:\/\/\s*([^)]+?)\s*\)/g, '[$1](https://$2)')
+              
+                  // 3. Convert [Label](https://pubmed...) to (Label) with hyperlink
+                  .replace(/\(\[([^\]]+?)\]\(https:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/(\d{6,})\)\)/gi, (_, label, pmid) => {
+                    return `([${label}](https://pubmed.ncbi.nlm.nih.gov/${pmid}))`;
+                  })
+              
+                  // 4. Ensure PubMed links are wrapped in parens if not already
+                  .replace(/(?<!\()(\[.*?\]\(https:\/\/pubmed\.ncbi\.nlm\.nih\.gov\/\d+\))(?!\))/g, '($1)')
+
+                  // Hide PMID lines from rendered output
+                  .replace(/^PMID:\s*\d+\s*/gm, '')
+              
+                  // 5. Fix bold headers: **Label: ** → **Label:** (with proper spacing)
+                  .replace(/\*\*\s*(.+?)\s*:\s*\*\*/g, '**$1:**')
+              
+                  // 6. Fix any bold that’s missing spacing after
+                  .replace(/(\*\*[^\*]+?\*\*)(?=\S)/g, '$1 ')
+              
+                  // 7. Remove extra spaces before commas/periods/etc.
+                  .replace(/\s+([,.:;!?])/g, '$1')
+              
+                  // 8. Fix bullets: * or - with or without space → -
+                  .replace(/^\s*[-*]\s+/gm, '- ')
+              
+                  // 9. Remove newline between bullet and its text
+                  .replace(/-\s*\n\s*/g, '- ')
+              
+                  // 10. Add blank line before headings like ### or ##
+                  .replace(/(?<!\n)\s*(#+\s+)/g, '\n\n$1')
+              
+                  // 11. Normalize extra newlines
+                  .replace(/\n{3,}/g, '\n\n')
+
+                  // 🔥 NEW RULE to strip dangling journal list (parentheses only at the end)
+                  .replace(/(\(\s*.+?\s*\)\s*)+$/, '')
+              }
+
+              const markdownText = typeof text === 'string'
+              ? cleanMarkdown(
+              dedupeClosingLines(
+                  text
+                    .replace(/\*\*\s+/gm, '**')
+                    .replace(/PMID[:\s]*([0-9]+)/g, (_, id) => {
+                      const match = articles?.find((a) => a.pmid === id)
+                      const label = match?.journal?.trim() || 'PubMed'
+                      return `[**_${label}_** (PMID: ${id})](https://pubmed.ncbi.nlm.nih.gov/${id})`
+                    })
+                    .replace(/(?<=\n)(\d+\..+?)\n/g, '\n<hr />\n$1\n')
+                ))
+              : ''
+
+              return (
+                <div key={idx} className={`mb-3 ${msg.role === 'user' ? 'text-right' : 'text-left'}`}>
+                  <div className={`prose chat-markdown max-w-[80%] inline-block px-4 py-2 rounded-lg whitespace-pre-wrap overflow-x-auto ${msg.role === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-50 text-gray-900'}`}>
+                  <div className="prose chat-markdown text-[15px] leading-tight [&_a]:underline [&_a]:font-semibold [&_a]:text-black">
+                      <ReactMarkdown rehypePlugins={[rehypeRaw]} remarkPlugins={[remarkGfm]}>
+                        {markdownText}
+                      </ReactMarkdown>
+                    </div>
+                    {msg.role === 'assistant' && articles && (
+                      <div className="mt-4 space-y-4">
+                        {articles.map(article => (
+                          <div key={article.pmid} className="border rounded-lg p-4 bg-gray-50 shadow-sm">
+                            <div className="font-semibold">{article.title}</div>
+                            <div className="text-sm text-gray-600 mb-1">{article.authors}</div>
+                            <div className="text-sm italic text-gray-500">
+                              {article.journal} ({article.year})
                             </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
-              {loading && (
-                <div className="text-left mb-3">
-                  <div className="inline-block px-4 py-2 rounded-lg bg-gray-100">
-                    <div className="flex items-center space-x-1">
-                      <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
-                      <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
-                      <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
-                    </div>
+                            {article.abstract && (
+                              <div className="mt-2 text-sm text-gray-700 line-clamp-4">
+                                {article.abstract.slice(0, 300)}...
+                              </div>
+                            )}
+                            <a
+                              href={`https://pubmed.ncbi.nlm.nih.gov/${article.pmid}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-blue-600 text-sm mt-2 inline-block"
+                            >
+                              View on PubMed ↗
+                            </a>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
-              )}
-            </ScrollArea>
-          </div>
+              )
+            })}
+            {loading && (
+              <div className="text-left mb-3">
+                <div className="inline-block px-4 py-2 rounded-lg bg-gray-100">
+                  <div className="flex items-center space-x-1">
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0s' }}></div>
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                    <div className="w-2 h-2 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0.4s' }}></div>
+                  </div>
+                </div>
+              </div>
+            )}
+          </ScrollArea>
 
           <div className="mt-4 flex gap-2">
             <Input
@@ -246,7 +265,7 @@ export default function Home() {
             <Button onClick={handleSend} disabled={loading}>Send</Button>
           </div>
 
-          <footer className="mt-4 text-center text-sm text-gray-500">
+          <footer className="mt-8 text-center text-sm text-gray-500">
             Copyright ©2025{' '}
             <a
               href="https://www.linkedin.com/in/alsellappan/"
@@ -255,8 +274,7 @@ export default function Home() {
               className="text-blue-600 hover:underline"
             >
               Alagappan Sellappan
-            </a>{' '}
-            | All Rights Reserved
+            </a>{' '}| All Rights Reserved
           </footer>
         </div>
       </div>

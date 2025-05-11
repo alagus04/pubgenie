@@ -5,7 +5,10 @@ import axios from 'axios'
 import xml2js from 'xml2js'
 import { extractSmartSearchTerms } from '@/lib/searchUtils'
 import { getFirestore } from 'firebase-admin/firestore'
+import { adminDb } from '@/lib/firebaseAdmin'
 import '@/lib/firebaseAdmin'
+// import { db } from '@/lib/firebase'
+// import { collection, doc, addDoc, serverTimestamp } from 'firebase/firestore'
 
 if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
   console.error('❌ Missing FIREBASE_SERVICE_ACCOUNT in env!')
@@ -414,6 +417,24 @@ if (userId) {
       topicShift
     })
 }
+
+// ✅ Prepare messages
+const messages = [
+  ...history,
+  { role: 'user', content: prompt },
+  { role: 'assistant', content: replyWithFollowUp }
+]
+
+// ✅ Save chat to Firestore
+const userRef = adminDb.collection('users').doc(userId)
+const queriesRef = userRef.collection('queries')
+
+await queriesRef.add({
+  title: prompt.slice(0, 50), // Or use `topicTag` if it's meaningful
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  messages
+})
 
 // ✅ Send response to frontend
 return res.status(200).json({
