@@ -123,6 +123,22 @@ useEffect(() => {
     })
 
     const data = await res.json()
+
+    // after: const data = await res.json()
+    if (!res.ok || !data?.reply) {
+      console.error('API /chat failed', { status: res.status, data })
+      setLoading(false)
+      setMessages(prev => [
+        ...prev,
+        {
+          role: 'assistant',
+          content:
+            'Sorry — I hit an error reaching the server. Please try again in a moment.'
+        }
+      ])
+      return
+    }
+
     console.log('REPLY FROM API:', data.reply)
 
     const assistantContent: Message['content'] = {
