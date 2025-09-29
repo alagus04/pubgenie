@@ -136,7 +136,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
               reply: `Hmm, that’s a great starting point! Just to make sure I pull the most relevant research for you — could you let me know what part you’re most curious about?\n\nFor example:\n• A specific disease or treatment?\n• A certain population group?\n• Or something you want to compare?\n\nHappy to dig in with you! 😊`
             })
           }
-      
           if (intent === 'general') {
             const generalResponse = await generateGeminiContent([
               {
@@ -144,7 +143,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 parts: [{ text: `You’re a friendly and clear biomedical explainer. Break down the following topic as if you're talking to a curious student. Keep it easy to understand but insightful:\n\n"${prompt}"` }]
               }
             ])
-            return res.status(200).json({ reply: generalResponse })
+
+            // derive a topic so follow-ups work
+            const derivedTopic = await extractSmartSearchTerms(prompt, true)
+
+            return res.status(200).json({
+              reply: {
+                text: generalResponse,
+                articles: [],
+                topic: derivedTopic || ''
+              }
+            })
           }
         }
 
@@ -152,7 +161,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let topicTag = ''
     const allPmids = new Set<string>()
 
-    const isAskForMore = /more (studies|articles|research|examples)/i.test(prompt)
+    const isAskForMore = /\b(more (studies|articles|research|examples)|papers?|citations?|references?|pubmed|show (me )?(papers|studies|articles))\b/i.test(prompt)
     if (isFirstMessage || !isFollowUp || topicShift || isAskForMore) {
       console.log('🚀 New search triggered')
       topicTag = await extractSmartSearchTerms(prompt, false)
@@ -257,8 +266,23 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       }
     
       if (!topicTag) {
-        console.warn('⚠️ No previous topic found in history. Cannot proceed.')
-        return res.status(200).json({ reply: "I couldn't determine the previous topic to answer your follow-up. Please clarify your question!" })
+        console.warn('⚠️ No previous topic found in history. Deriving from conversation...')
+        // Try last meaningful user message; if not, use current prompt
+        const lastUser = [...history].reverse().find(m => m.role === 'user')
+        const lastText = typeof lastUser?.content === 'string'
+          ? lastUser.content
+          : (lastUser?.content as any)?.text || ''
+
+        const source = lastText || prompt
+        topicTag = await extractSmartSearchTerms(source, false)
+        console.log('🧩 Derived topic from follow-up:', topicTag)
+
+        // If we still couldn't derive a topic, ask to clarify
+        if (!topicTag) {
+          return res.status(200).json({
+            reply: "I couldn’t infer the topic from the conversation. Could you restate what you want papers about (e.g., 'papers on HER2+ breast cancer neoadjuvant therapy')?"
+          })
+        }
       }
     
       const pmidRegex = /PMID[:\s]*([0-9]+)/g
@@ -273,6 +297,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             }
           }
         }
+      }
+
+      // If we didn't recover PMIDs from history, run a quick search on the derived topic
+      if (allPmids.size === 0 && topicTag) {
+        console.log('🔍 No PMIDs from history. Searching with derived topic:', topicTag)
+        let pmids = await tryQuery(topicTag)
+        if (pmids.length === 0) {
+          const fallbackQuery = topicTag.split(/\s+/).filter(w => w.length > 2).slice(0, 6).join(' ')
+          pmids = await tryQuery(fallbackQuery)
+        }
+        pmids.forEach((p: string) => allPmids.add(p))
       }
     }
 
