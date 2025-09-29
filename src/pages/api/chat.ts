@@ -422,7 +422,13 @@ if (userId) {
 const messages = [
   ...history,
   { role: 'user', content: prompt },
-  { role: 'assistant', content: replyWithFollowUp }
+  {
+    role: 'assistant',
+    content: {
+      text: replyWithFollowUp,
+      topic: topicTag
+    }
+  }
 ]
 
 // ✅ Save chat to Firestore
