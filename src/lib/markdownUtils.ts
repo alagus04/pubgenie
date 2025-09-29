@@ -68,49 +68,49 @@ function detectContentType(text: string): ContentType {
   return 'paragraph';
 }
 
-function splitIntoSections(text: string): string[] {
-  return text
-    .split(/(?=\d+\.\s+)/)
-    .map(chunk => chunk.trim())
-    .filter(chunk => chunk.length > 0);
-}
+// function splitIntoSections(text: string): string[] {
+//   return text
+//     .split(/(?=\d+\.\s+)/)
+//     .map(chunk => chunk.trim())
+//     .filter(chunk => chunk.length > 0);
+// }
 
-function parseContentNode(text: string, level: number = 0): ContentNode {
-  const type = detectContentType(text);
-  const lines = text.split('\n');
+// function parseContentNode(text: string, level: number = 0): ContentNode {
+//   const type = detectContentType(text);
+//   const lines = text.split('\n');
   
-  switch (type) {
-    case 'section':
-      return {
-        type,
-        content: lines[0].replace(/^\d+\.\s*/, ''),
-        children: lines.slice(1).map(line => parseContentNode(line, level + 1)),
-        metadata: { level }
-      };
+//   switch (type) {
+//     case 'section':
+//       return {
+//         type,
+//         content: lines[0].replace(/^\d+\.\s*/, ''),
+//         children: lines.slice(1).map(line => parseContentNode(line, level + 1)),
+//         metadata: { level }
+//       };
     
-    case 'list':
-      return {
-        type,
-        content: lines.map(line => line.replace(/^[*-]\s*/, '')).join('\n'),
-        metadata: { level, isNested: level > 0 }
-      };
+//     case 'list':
+//       return {
+//         type,
+//         content: lines.map(line => line.replace(/^[*-]\s*/, '')).join('\n'),
+//         metadata: { level, isNested: level > 0 }
+//       };
     
-    case 'subsection':
-      return {
-        type,
-        content: lines[0].replace(/^\*\*|\*\*:$/g, ''),
-        children: lines.slice(1).map(line => parseContentNode(line, level + 1)),
-        metadata: { level }
-      };
+//     case 'subsection':
+//       return {
+//         type,
+//         content: lines[0].replace(/^\*\*|\*\*:$/g, ''),
+//         children: lines.slice(1).map(line => parseContentNode(line, level + 1)),
+//         metadata: { level }
+//       };
     
-    default:
-      return {
-        type,
-        content: text,
-        metadata: { level }
-      };
-  }
-}
+//     default:
+//       return {
+//         type,
+//         content: text,
+//         metadata: { level }
+//       };
+//   }
+// }
 
 // Formatting utilities
 function formatContentNode(node: ContentNode): string {

@@ -208,26 +208,26 @@ setLoading(false)
     )
   }
 
-  const renameChat = async (chatId: string) => {
-    const user = auth.currentUser
-    if (!user) return
+  // const renameChat = async (chatId: string) => {
+  //   const user = auth.currentUser
+  //   if (!user) return
   
-    const newTitle = prompt('Enter new chat title:')
-    if (!newTitle || newTitle.trim() === '') return
+  //   const newTitle = prompt('Enter new chat title:')
+  //   if (!newTitle || newTitle.trim() === '') return
   
-    const chatRef = doc(db, 'users', user.uid, 'queries', chatId)
-    await setDoc(chatRef, { title: newTitle }, { merge: true })
+  //   const chatRef = doc(db, 'users', user.uid, 'queries', chatId)
+  //   await setDoc(chatRef, { title: newTitle }, { merge: true })
   
-    // Refresh the sidebar
-    const snapshot = await getDocs(collection(db, 'users', user.uid, 'queries'))
-    const loadedChats = snapshot.docs.map(doc => ({
-      id: doc.id,
-      title: doc.data().title || 'Untitled',
-      createdAt: doc.data().createdAt?.toDate() || new Date()
-    })).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+  //   // Refresh the sidebar
+  //   const snapshot = await getDocs(collection(db, 'users', user.uid, 'queries'))
+  //   const loadedChats = snapshot.docs.map(doc => ({
+  //     id: doc.id,
+  //     title: doc.data().title || 'Untitled',
+  //     createdAt: doc.data().createdAt?.toDate() || new Date()
+  //   })).sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
   
-    setSavedChats(loadedChats)
-  }
+  //   setSavedChats(loadedChats)
+  // }
 
   return (
     <ProtectedRoute>
