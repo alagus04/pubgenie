@@ -132,8 +132,20 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           console.log('🔍 Prompt intent classification:', intent)
       
           if (intent === 'vague') {
+            const derivedTopic = await extractSmartSearchTerms(prompt, true)
             return res.status(200).json({
-              reply: `Hmm, that’s a great starting point! Just to make sure I pull the most relevant research for you — could you let me know what part you’re most curious about?\n\nFor example:\n• A specific disease or treatment?\n• A certain population group?\n• Or something you want to compare?\n\nHappy to dig in with you! 😊`
+              reply: {
+                text: `Hmm, that’s a great starting point! Just to make sure I pull the most relevant research for you — could you let me know what part you’re most curious about?
+
+          For example:
+          • A specific disease or treatment?
+          • A certain population group?
+          • Or something you want to compare?
+
+          Happy to dig in with you! 😊`,
+                articles: [],
+                topic: derivedTopic || ''  // <-- add this
+              }
             })
           }
           if (intent === 'general') {
@@ -179,22 +191,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         pmids = await tryQuery(fallbackQuery)
         logQueryDebug('Fallback prompt', fallbackQuery, pmids)
       }
-
-      if (!pmids.length) {
-        console.warn('⚠️ Semantic and fallback queries failed. Trying emergency broad search.')
-      
-        const emergencyFallback = 'genocide AND international law'
-        pmids = await tryQuery(emergencyFallback)
-        logQueryDebug('Emergency fallback query', emergencyFallback, pmids)
-      }
       
       if (!pmids.length) {
         console.warn('❗ No PMIDs even after emergency fallback.')
         return res.status(200).json({ reply: "I couldn't find any articles related to your query." })
       }
       
-      pmids.forEach((pmid: string) => allPmids.add(pmid))
-
       pmids.forEach((pmid: string) => allPmids.add(pmid))
 
       const { data: existing } = await supabase.from('articles').select('pmid')
@@ -254,7 +256,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       console.log('🔕 Skipping PubMed keyword extraction for follow-up message.')
     
       // 🧠 Instead of extracting again, try to reuse the previous topic
-      for (const msg of history.reverse()) { // reverse so we prioritize the latest message
+      for (const msg of [...history].reverse()) { // reverse so we prioritize the latest message
         if (msg.role === 'assistant' && typeof msg.content === 'object') {
           const previousTopic = msg.content.topic
           if (previousTopic) {

@@ -75,19 +75,48 @@ export default function Home() {
       return
     }
 
-    const res = await fetch('/api/chat', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        prompt: input,
-        role,
-        compare: isCompare,
-        history,
-        userId: firebaseUser.uid
+    // ✅ NEW (robust fetch + error handling)
+    let data: any
+    try {
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: input, // keep this if you support file summaries; otherwise use just `input`
+          role,
+          compare: isCompare,
+          history,
+          userId: firebaseUser.uid
+        })
       })
-    })
 
-    const data = await res.json()
+      if (!res.ok) {
+        const errText = await res.text()
+        console.error('❌ /api/chat failed:', res.status, errText)
+        throw new Error(`Server error ${res.status}`)
+      }
+
+      data = await res.json()
+    } catch (e) {
+      console.error('❌ Chat request error:', e)
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: { text: 'Something went wrong talking to the server. Please try again.' } }
+      ])
+      setLoading(false)
+      return
+    }
+
+    if (!data || !data.reply) {
+      console.error('❌ No reply in API response:', data)
+      setMessages(prev => [
+        ...prev,
+        { role: 'assistant', content: { text: 'I didn’t receive a reply from the server.' } }
+      ])
+      setLoading(false)
+      return
+    }
+
     console.log('REPLY FROM API:', data.reply)
 
     const assistantContent: Message['content'] = {
