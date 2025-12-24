@@ -147,14 +147,14 @@ useEffect(() => {
       topic: data.reply.topic ?? ''
     }
 
-    console.log('🚀 Assistant raw reply (before saving to messages):', assistantContent.text)
+    console.log('Assistant raw reply (before saving to messages):', assistantContent.text)
 
     const assistantMessage: Message = {
       role: 'assistant',
       content: assistantContent
     }
 
-// ✅ Auto-save the chat to Firestore
+// Auto-save the chat to Firestore
 const currentChatId = chatId || crypto.randomUUID()
 setChatId(currentChatId)
 
@@ -168,7 +168,7 @@ await setDoc(chatRef, {
 
 await fetchChats()
 
-// ✅ Then finish the interaction
+// Then finish the interaction
 setMessages(prev => [...prev, assistantMessage])
 setLoading(false)
   }
@@ -176,10 +176,10 @@ setLoading(false)
   const handleSignOut = async () => {
     try {
       await signOut(auth)
-      console.log('✅ Successfully signed out')
+      console.log('Successfully signed out')
       router.push('/')
     } catch (err) {
-      console.error('❌ Sign out error:', err)
+      console.error('Sign out error:', err)
     }
   }
 

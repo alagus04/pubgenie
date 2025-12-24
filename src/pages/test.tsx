@@ -75,7 +75,7 @@ export default function Home() {
       return
     }
 
-    // ✅ NEW (robust fetch + error handling)
+    // NEW (robust fetch + error handling)
     let data: any
     try {
       const res = await fetch('/api/chat', {
@@ -92,13 +92,13 @@ export default function Home() {
 
       if (!res.ok) {
         const errText = await res.text()
-        console.error('❌ /api/chat failed:', res.status, errText)
+        console.error('/api/chat failed:', res.status, errText)
         throw new Error(`Server error ${res.status}`)
       }
 
       data = await res.json()
     } catch (e) {
-      console.error('❌ Chat request error:', e)
+      console.error('Chat request error:', e)
       setMessages(prev => [
         ...prev,
         { role: 'assistant', content: { text: 'Something went wrong talking to the server. Please try again.' } }
@@ -108,7 +108,7 @@ export default function Home() {
     }
 
     if (!data || !data.reply) {
-      console.error('❌ No reply in API response:', data)
+      console.error('No reply in API response:', data)
       setMessages(prev => [
         ...prev,
         { role: 'assistant', content: { text: 'I didn’t receive a reply from the server.' } }
@@ -125,7 +125,7 @@ export default function Home() {
       topic: data.reply.topic ?? ''
     }
 
-    console.log('🚀 Assistant raw reply (before saving to messages):', assistantContent.text)
+    console.log('Assistant raw reply (before saving to messages):', assistantContent.text)
 
     const assistantMessage: Message = {
       role: 'assistant',
@@ -139,10 +139,10 @@ export default function Home() {
   const handleSignOut = async () => {
     try {
       await signOut(auth)
-      console.log('✅ Successfully signed out')
+      console.log('Successfully signed out')
       router.push('/')
     } catch (err) {
-      console.error('❌ Sign out error:', err)
+      console.error('Sign out error:', err)
     }
   }
 

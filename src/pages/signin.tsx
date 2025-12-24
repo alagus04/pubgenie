@@ -26,7 +26,7 @@ export default function SignInPage() {
       }
     })
     return () => unsubscribe()
-  }, [router]) // ✅ Added router as a dependency
+  }, [router]) // Added router as a dependency
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
