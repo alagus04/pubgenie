@@ -5,10 +5,13 @@ import axios from 'axios'
 import xml2js from 'xml2js'
 import { extractSmartSearchTerms } from '@/lib/searchUtils'
 import { getFirestore } from 'firebase-admin/firestore'
+import { adminDb } from '@/lib/firebaseAdmin'
 import '@/lib/firebaseAdmin'
+// import { db } from '@/lib/firebase'
+// import { collection, doc, addDoc, serverTimestamp } from 'firebase/firestore'
 
 if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
-  console.error('❌ Missing FIREBASE_SERVICE_ACCOUNT in env!')
+  console.error('Missing FIREBASE_SERVICE_ACCOUNT in env!')
 }
 
 const db = getFirestore()
@@ -26,16 +29,16 @@ async function tryQuery(query: string) {
     api_key: PUBMED_API_KEY || ''
   })
 
-  console.log('🔁 Trying PubMed query:', query)
+  console.log('Trying PubMed query:', query)
   const searchRes = await axios.get(`${EUTILS_SEARCH}?${searchParams}`)
-  console.log('✅ PubMed search response received')
+  console.log('PubMed search response received')
   return searchRes.data?.esearchresult?.idlist || []
 }
 
 function logQueryDebug(prompt: string, query: string, pmids: string[]) {
-  console.log('🔎 Original Prompt:', prompt)
-  console.log('📚 Gemini Search Query:', query)
-  console.log('🧨 PubMed PMIDs:', pmids)
+  console.log('Original Prompt:', prompt)
+  console.log('Gemini Search Query:', query)
+  console.log('PubMed PMIDs:', pmids)
 }
 
 type Message = {
@@ -70,7 +73,7 @@ async function isTopicShift(history: Message[], newPrompt: string): Promise<bool
   
   Respond with ONLY "yes" or "no".`
   
-    console.log('🧠 Checking topic shift with Gemini...')
+    console.log('Checking topic shift with Gemini...')
     const response = await generateGeminiContent([
       {
         role: 'user',
@@ -78,7 +81,7 @@ async function isTopicShift(history: Message[], newPrompt: string): Promise<bool
       }
     ])
   
-    console.log('🧠 Gemini topic shift response:', response)
+    console.log('Gemini topic shift response:', response)
     return response.trim().toLowerCase() === 'yes'
   }
 
@@ -129,11 +132,22 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           console.log('🔍 Prompt intent classification:', intent)
       
           if (intent === 'vague') {
+            const derivedTopic = await extractSmartSearchTerms(prompt, true)
             return res.status(200).json({
-              reply: `Hmm, that’s a great starting point! Just to make sure I pull the most relevant research for you — could you let me know what part you’re most curious about?\n\nFor example:\n• A specific disease or treatment?\n• A certain population group?\n• Or something you want to compare?\n\nHappy to dig in with you! 😊`
+              reply: {
+                text: `Hmm, that’s a great starting point! Just to make sure I pull the most relevant research for you — could you let me know what part you’re most curious about?
+
+          For example:
+          • A specific disease or treatment?
+          • A certain population group?
+          • Or something you want to compare?
+
+          Happy to dig in with you! 😊`,
+                articles: [],
+                topic: derivedTopic || ''  // <-- add this
+              }
             })
           }
-      
           if (intent === 'general') {
             const generalResponse = await generateGeminiContent([
               {
@@ -141,7 +155,17 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
                 parts: [{ text: `You’re a friendly and clear biomedical explainer. Break down the following topic as if you're talking to a curious student. Keep it easy to understand but insightful:\n\n"${prompt}"` }]
               }
             ])
-            return res.status(200).json({ reply: generalResponse })
+
+            // derive a topic so follow-ups work
+            const derivedTopic = await extractSmartSearchTerms(prompt, true)
+
+            return res.status(200).json({
+              reply: {
+                text: generalResponse,
+                articles: [],
+                topic: derivedTopic || ''
+              }
+            })
           }
         }
 
@@ -149,16 +173,16 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     let topicTag = ''
     const allPmids = new Set<string>()
 
-    const isAskForMore = /more (studies|articles|research|examples)/i.test(prompt)
+    const isAskForMore = /\b(more (studies|articles|research|examples)|papers?|citations?|references?|pubmed|show (me )?(papers|studies|articles))\b/i.test(prompt)
     if (isFirstMessage || !isFollowUp || topicShift || isAskForMore) {
-      console.log('🚀 New search triggered')
+      console.log('New search triggered')
       topicTag = await extractSmartSearchTerms(prompt, false)
       const semanticQuery = topicTag
       let pmids = await tryQuery(semanticQuery)
       logQueryDebug(prompt, semanticQuery, pmids)
 
       if (pmids.length === 0) {
-        console.warn('⚠️ No PMIDs from semantic query. Trying raw prompt...')
+        console.warn('No PMIDs from semantic query. Trying raw prompt...')
         const fallbackQuery = prompt
           .split(/\s+/)
           .filter((w: string) => w.length > 2)
@@ -167,22 +191,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         pmids = await tryQuery(fallbackQuery)
         logQueryDebug('Fallback prompt', fallbackQuery, pmids)
       }
-
-      if (!pmids.length) {
-        console.warn('⚠️ Semantic and fallback queries failed. Trying emergency broad search.')
-      
-        const emergencyFallback = 'genocide AND international law'
-        pmids = await tryQuery(emergencyFallback)
-        logQueryDebug('Emergency fallback query', emergencyFallback, pmids)
-      }
       
       if (!pmids.length) {
-        console.warn('❗ No PMIDs even after emergency fallback.')
+        console.warn('No PMIDs even after emergency fallback.')
         return res.status(200).json({ reply: "I couldn't find any articles related to your query." })
       }
       
-      pmids.forEach((pmid: string) => allPmids.add(pmid))
-
       pmids.forEach((pmid: string) => allPmids.add(pmid))
 
       const { data: existing } = await supabase.from('articles').select('pmid')
@@ -190,7 +204,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       const missingPmids = pmids.filter((pmid: string) => !existingPmids.has(pmid))
 
       if (missingPmids.length > 0) {
-        console.log('📥 Fetching missing articles from PubMed:', missingPmids)
+        console.log('Fetching missing articles from PubMed:', missingPmids)
         const fetchParams = new URLSearchParams({
           db: 'pubmed',
           id: missingPmids.join(','),
@@ -203,7 +217,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         const articlesFetched = parsed.PubmedArticleSet.PubmedArticle || []
         const inserts = Array.isArray(articlesFetched) ? articlesFetched : [articlesFetched]
 
-        console.log(`📄 Parsed ${inserts.length} new articles`)
+        console.log(`Parsed ${inserts.length} new articles`)
 
         for (const article of inserts) {
           const pmid = article.MedlineCitation.PMID._ || article.MedlineCitation.PMID
@@ -241,21 +255,36 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     else {
       console.log('🔕 Skipping PubMed keyword extraction for follow-up message.')
     
-      // 🧠 Instead of extracting again, try to reuse the previous topic
-      for (const msg of history.reverse()) { // reverse so we prioritize the latest message
+      // Instead of extracting again, try to reuse the previous topic
+      for (const msg of [...history].reverse()) { // reverse so we prioritize the latest message
         if (msg.role === 'assistant' && typeof msg.content === 'object') {
           const previousTopic = msg.content.topic
           if (previousTopic) {
             topicTag = previousTopic
-            console.log('🔁 Reusing previous topic from history:', topicTag)
+            console.log('Reusing previous topic from history:', topicTag)
             break
           }
         }
       }
     
       if (!topicTag) {
-        console.warn('⚠️ No previous topic found in history. Cannot proceed.')
-        return res.status(200).json({ reply: "I couldn't determine the previous topic to answer your follow-up. Please clarify your question!" })
+        console.warn(' No previous topic found in history. Deriving from conversation...')
+        // Try last meaningful user message; if not, use current prompt
+        const lastUser = [...history].reverse().find(m => m.role === 'user')
+        const lastText = typeof lastUser?.content === 'string'
+          ? lastUser.content
+          : (lastUser?.content as any)?.text || ''
+
+        const source = lastText || prompt
+        topicTag = await extractSmartSearchTerms(source, false)
+        console.log('Derived topic from follow-up:', topicTag)
+
+        // If we still couldn't derive a topic, ask to clarify
+        if (!topicTag) {
+          return res.status(200).json({
+            reply: "I couldn’t infer the topic from the conversation. Could you restate what you want papers about (e.g., 'papers on HER2+ breast cancer neoadjuvant therapy')?"
+          })
+        }
       }
     
       const pmidRegex = /PMID[:\s]*([0-9]+)/g
@@ -271,10 +300,21 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
           }
         }
       }
+
+      // If we didn't recover PMIDs from history, run a quick search on the derived topic
+      if (allPmids.size === 0 && topicTag) {
+        console.log('🔍 No PMIDs from history. Searching with derived topic:', topicTag)
+        let pmids = await tryQuery(topicTag)
+        if (pmids.length === 0) {
+          const fallbackQuery = topicTag.split(/\s+/).filter(w => w.length > 2).slice(0, 6).join(' ')
+          pmids = await tryQuery(fallbackQuery)
+        }
+        pmids.forEach((p: string) => allPmids.add(p))
+      }
     }
 
     if (!allPmids.size) {
-      console.warn('❗ No PMIDs collected at all')
+      console.warn('No PMIDs collected at all')
       return res.status(200).json({ reply: "I couldn't find any articles to summarize." })
     }
 
@@ -284,7 +324,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
     .in('pmid', Array.from(allPmids))
   
   if (!fetchedArticles || fetchedArticles.length === 0) {
-    console.warn('❗ No articles found in Supabase. Attempting to re-fetch missing articles.')
+    console.warn('No articles found in Supabase. Attempting to re-fetch missing articles.')
   
     // Attempt re-fetch from PubMed directly
     const fetchParams = new URLSearchParams({
@@ -343,12 +383,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
       fetchedArticles = refetch.data || []
   
     } catch (error) {
-      console.error('❌ Error while emergency fetching articles:', error)
+      console.error('Error while emergency fetching articles:', error)
     }
   }
   
   if (!fetchedArticles || fetchedArticles.length === 0) {
-    console.warn('❗ Still no articles after re-fetching. Giving up.')
+    console.warn('Still no articles after re-fetching. Giving up.')
     return res.status(200).json({ reply: 'No articles found for summarization.' })
   }
 
@@ -358,7 +398,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     const pmidList = fetchedArticles.map(a => a.pmid).join(', ')
 
-    console.log('📝 Generating summary with Gemini')
+    console.log('Generating summary with Gemini')
     const markdownInstructions = `You MUST respond using GitHub-flavored Markdown. Follow these formatting rules exactly:
 
 - Use "###" for section headers like 'Current Treatment Strategies'
@@ -376,29 +416,29 @@ Structure:
 
 This will be parsed by a Markdown interpreter. Be strict about formatting.`;
 
-console.log('📝 Generating summary with Gemini')
+console.log('Generating summary with Gemini')
 
 const rawReply = await generateGeminiContent([
   {
     role: 'user',
     parts: [{
       text: isFollowUp && !topicShift
-        ? `${markdownInstructions}You’re a friendly and conversational biomedical research assistant who talks like a helpful collaborator — not too formal, not robotic. You guide the user clearly, ask thoughtful questions when needed, and explain article insights like you're talking to a curious friend or student.\n\n🧠 Topic: ${topicTag}\n\nHere are the PMIDs of the articles we're referring to: ${pmidList}.\n\nUse your memory of the prior articles to answer this question if relevant. If this is a new topic, say that you need new articles to answer it.\n\nFollow-up Question: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
+        ? `${markdownInstructions}You’re a friendly and conversational biomedical research assistant who talks like a helpful collaborator — not too formal, not robotic. You guide the user clearly, ask thoughtful questions when needed, and explain article insights like you're talking to a curious friend or student.\n\n Topic: ${topicTag}\n\nHere are the PMIDs of the articles we're referring to: ${pmidList}.\n\nUse your memory of the prior articles to answer this question if relevant. If this is a new topic, say that you need new articles to answer it.\n\nFollow-up Question: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
         : compare
-          ? `${markdownInstructions}You’re a friendly and conversational biomedical research assistant who talks like a helpful collaborator — not too formal, not robotic. You guide the user clearly, ask thoughtful questions when needed, and explain article insights like you're talking to a curious friend or student.\n\n🧠 Topic: ${topicTag}\n\nCompare the following articles based on their key findings, methodologies, outcomes, and relevance. DO NOT use a table. Instead, present your findings in a clearly structured list using markdown headings and bullet points. Tailor the tone for a ${role}.\n\nUser Prompt: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
-          : `${markdownInstructions}You’re a friendly and conversational biomedical research assistant who talks like a helpful collaborator — not too formal, not robotic. You guide the user clearly, ask thoughtful questions when needed, and explain article insights like you're talking to a curious friend or student.\n\n🧠 Topic: ${topicTag}\n\nAnswer the following question using only the provided article content. Highlight key findings and include PMIDs. Tailor the tone for a ${role}.\n\nUser Question: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
+          ? `${markdownInstructions}You’re a friendly and conversational biomedical research assistant who talks like a helpful collaborator — not too formal, not robotic. You guide the user clearly, ask thoughtful questions when needed, and explain article insights like you're talking to a curious friend or student.\n\n Topic: ${topicTag}\n\nCompare the following articles based on their key findings, methodologies, outcomes, and relevance. DO NOT use a table. Instead, present your findings in a clearly structured list using markdown headings and bullet points. Tailor the tone for a ${role}.\n\nUser Prompt: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
+          : `${markdownInstructions}You’re a friendly and conversational biomedical research assistant who talks like a helpful collaborator — not too formal, not robotic. You guide the user clearly, ask thoughtful questions when needed, and explain article insights like you're talking to a curious friend or student.\n\n Topic: ${topicTag}\n\nAnswer the following question using only the provided article content. Highlight key findings and include PMIDs. Tailor the tone for a ${role}.\n\nUser Question: "${prompt}"\n\nArticles:\n${combinedAbstracts}`
     }]
   }
 ])
 
-console.log('✅ Gemini response generated')
+console.log('Gemini response generated')
 
-// ✅ Append PMIDs manually to ensure they're always present in history
+// Append PMIDs manually to ensure they're always present in history
 const pmidFooter = fetchedArticles.map((a) => `PMID: ${a.pmid}`).join('\n')
 const rawReplyWithPmids = `${rawReply}\n\n<!-- PMIDs: ${pmidFooter} -->`
 const replyWithFollowUp = rawReplyWithPmids + '\n\nLet me know if you want to dive deeper into any of these, or if something was unclear!'
 
-// ✅ Save to Firestore if user ID present
+// Save to Firestore if user ID present
 if (userId) {
   await db.collection('users')
     .doc(userId)
@@ -415,7 +455,31 @@ if (userId) {
     })
 }
 
-// ✅ Send response to frontend
+// Prepare messages
+const messages = [
+  ...history,
+  { role: 'user', content: prompt },
+  {
+    role: 'assistant',
+    content: {
+      text: replyWithFollowUp,
+      topic: topicTag
+    }
+  }
+]
+
+// Save chat to Firestore
+const userRef = adminDb.collection('users').doc(userId)
+const queriesRef = userRef.collection('queries')
+
+await queriesRef.add({
+  title: prompt.slice(0, 50), // Or use `topicTag` if it's meaningful
+  createdAt: new Date(),
+  updatedAt: new Date(),
+  messages
+})
+
+// Send response to frontend
 return res.status(200).json({
   reply: {
     text: replyWithFollowUp,
@@ -433,7 +497,7 @@ return res.status(200).json({
 
   } catch (err) {
     const error = err as unknown as { response?: { data?: unknown }, message?: string }
-    console.error('❌ Gemini Chat Error:', JSON.stringify(error.response?.data || error.message, null, 2))
+    console.error('Gemini Chat Error:', JSON.stringify(error.response?.data || error.message, null, 2))
     return res.status(500).json({ error: 'Something went wrong while generating the summary.' })
   }
 }

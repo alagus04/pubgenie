@@ -148,3 +148,7 @@ body {
   border-top: 1px solid black;
   margin: 0.5rem 0;
 }
+
+html, body {
+  background-color: white !important;
+}

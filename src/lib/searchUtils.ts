@@ -32,7 +32,7 @@ Prompt: ${prompt}`
       .filter(w => w.length > 2)
       .slice(0, 6)
       .join(' ')
-    console.warn('🔁 Falling back to simple search terms:', fallback)
+    console.warn('Falling back to simple search terms:', fallback)
     return fallback
   }
 
